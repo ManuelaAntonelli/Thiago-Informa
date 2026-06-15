@@ -181,6 +181,121 @@ A implementação do Thiago Informa contribuirá para:
 
 ---
 
+# Como Rodar o Projeto
+
+## 1. Clonar o Repositório
+
+```bash
+git clone https://github.com/ManuelaAntonelli/Thiago-Informa.git
+cd thiago-informa
+```
+
+---
+
+## 2. Instalar Dependências
+
+Na raiz do projeto execute:
+
+```bash
+npm install
+```
+
+---
+
+## 3. Configurar Variáveis de Ambiente
+
+Crie um arquivo `.env` na raiz do projeto:
+
+```env
+PORT=5000
+MONGO_URI=mongodb://127.0.0.1:27017/thiago-informa
+JWT_SECRET=thiago_informa_2026
+```
+
+---
+
+## 4. Iniciar o MongoDB
+
+### MongoDB Local
+
+Execute:
+
+```bash
+mongod
+```
+
+Caso o comando não seja reconhecido:
+
+* Instale o MongoDB Community Server
+* Adicione o MongoDB ao PATH do Windows
+
+---
+
+### MongoDB Atlas (Nuvem)
+
+Caso utilize MongoDB Atlas, altere a variável:
+
+```env
+MONGO_URI=sua_string_de_conexao_atlas
+```
+
+Exemplo:
+
+```env
+MONGO_URI=mongodb+srv://usuario:senha@cluster.mongodb.net/thiago-informa
+```
+
+---
+
+## 5. Rodar o Projeto
+
+Execute:
+
+```bash
+npm run dev
+```
+
+O comando iniciará simultaneamente:
+
+### Backend
+
+```text
+http://localhost:5000
+```
+
+### Frontend
+
+```text
+http://localhost:5173
+```
+
+---
+
+## Scripts Disponíveis
+
+### Iniciar
+
+```bash
+npm run dev
+```
+---
+
+### Iniciar apenas o Backend
+
+```bash
+npm run backend
+```
+
+---
+
+### Iniciar apenas o Frontend
+
+```bash
+npm run frontend
+```
+
+---
+
 # Status do Projeto
 
 Em desenvolvimento
@@ -208,4 +323,3 @@ Este projeto possui finalidade acadêmica e educacional, sendo desenvolvido como
 **EMEI Thiago Silva Santos**
 
 Plataforma desenvolvida para apoio à comunicação escolar e divulgação de projetos pedagógicos da Educação Infantil.
-
