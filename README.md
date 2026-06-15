@@ -187,7 +187,7 @@ A implementação do Thiago Informa contribuirá para:
 
 ```bash
 git clone https://github.com/ManuelaAntonelli/Thiago-Informa.git
-cd thiago-informa
+cd Thiago-Informa
 ```
 
 ---
