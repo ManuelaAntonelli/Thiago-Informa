@@ -44,23 +44,24 @@ router.get(
 router.post(
   "/",
   auth,
-  upload.single("imagem"),
+  upload.array("imagens", 5),
   async (req, res) => {
-    const novo =
-      await Informativo.create({
-        titulo:
-          req.body.titulo,
+    try {
+      const imagens = req.files ? req.files.map(file => file.filename) : [];
+      const primeiraImagem = imagens.length > 0 ? imagens[0] : null;
 
-        descricao:
-          req.body.descricao,
-
-        imagem:
-          req.file
-            ? req.file.filename
-            : null
+      const novo = await Informativo.create({
+        titulo: req.body.titulo,
+        descricao: req.body.descricao,
+        imagem: primeiraImagem,
+        imagens: imagens,
+        fixado: req.body.fixado === "true" || req.body.fixado === true
       });
 
-    res.json(novo);
+      res.json(novo);
+    } catch (err) {
+      res.status(500).json({ msg: err.message || "Erro ao criar informativo." });
+    }
   }
 );
 

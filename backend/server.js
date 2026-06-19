@@ -12,22 +12,14 @@ app.use(express.json());
 
 app.use(
   "/uploads",
-  express.static(path.join(__dirname, "uploads"))
+  express.static(path.join(__dirname, "..", "uploads"))
 );
 
-/*
-// Conexão com MongoDB (desativada temporariamente)
-
-mongoose
-  .connect(
-    process.env.MONGO_URI ||
-      "mongodb://127.0.0.1:27017/thiago-informa"
-  )
-  .then(() => console.log("MongoDB conectado"))
-  .catch((err) => console.log(err));
-*/
+// Conexão com MongoDB via Singleton
+require("./config/Database");
 
 app.use("/auth", require("./routes/authRoutes"));
+app.use("/salas", require("./routes/salaRoutes"));
 
 app.use(
   "/informativos",
@@ -37,6 +29,11 @@ app.use(
 app.use(
   "/projetos",
   require("./routes/projetoRoutes")
+);
+
+app.use(
+  "/eventos",
+  require("./routes/eventoRoutes")
 );
 
 const PORT = process.env.PORT || 5000;

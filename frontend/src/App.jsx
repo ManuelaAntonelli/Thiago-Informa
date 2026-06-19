@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Informativos from "./pages/Informativos";
 import Projetos from "./pages/Projetos";
+import Calendario from "./pages/Calendario";
 import Admin from "./pages/Admin";
 
 // Proteção para rotas de usuário logado
@@ -57,6 +58,16 @@ function App() {
           element={
             <PrivateRoute>
               <Projetos />
+            </PrivateRoute>
+          }
+        />
+
+        {/* CALENDARIO */}
+        <Route
+          path="/calendario"
+          element={
+            <PrivateRoute>
+              <Calendario />
             </PrivateRoute>
           }
         />

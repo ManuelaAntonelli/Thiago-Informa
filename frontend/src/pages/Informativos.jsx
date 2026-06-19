@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "../services/api";
 import Navbar from "../components/Navbar";
 import CardInformativo from "../components/CardInformativo";
 
@@ -8,7 +8,7 @@ export default function Informativos() {
   const [data, setData] = useState([]);
 
   useEffect(() => {
-    axios.get("http://localhost:5000/informativos")
+    api.get("/informativos")
       .then(res => setData(res.data));
   }, []);
 
