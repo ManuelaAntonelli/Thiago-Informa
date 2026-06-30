@@ -1,9 +1,5 @@
 # Princípios SOLID Aplicados — Thiago Informa
 
-> **Data de geração:** 30/06/2026
-> **Versão do projeto:** 1.0.0
-> **Referência:** Robert C. Martin — *Clean Architecture* e *Agile Software Development*
-
 ---
 
 ## Introdução

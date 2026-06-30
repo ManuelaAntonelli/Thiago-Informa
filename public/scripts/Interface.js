@@ -465,6 +465,14 @@ class Interface {
         
         document.getElementById('menu-opcoes').classList.add('d-none');
 
+        if (abaNome === 'inicio') {
+            this.carregarInformativos();
+        }
+
+        if (abaNome === 'projetos') {
+            this.exibirProjetos();
+        }
+
         if (abaNome === 'agenda') {
             this.renderizarCalendario();
             this.carregarFeriados();
