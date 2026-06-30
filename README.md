@@ -283,21 +283,6 @@ http://localhost:5173
 ```bash
 npm run dev
 ```
----
-
-### Iniciar apenas o Backend
-
-```bash
-npm run backend
-```
-
----
-
-### Iniciar apenas o Frontend
-
-```bash
-npm run frontend
-```
 
 ---
 
