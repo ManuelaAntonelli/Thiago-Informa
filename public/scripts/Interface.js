@@ -1,16 +1,36 @@
 /**
- * Interface (Facade Pattern)
+ * Interface (Facade Pattern + Composition Root)
+ *
  * Responsabilidade: ser o ponto de acesso único do sistema,
  * delegando operações para as controladoras especializadas.
- * 
- * Também gerencia a navegação entre abas e o calendário/agenda.
+ *
+ * Também atua como Composition Root (DIP): instancia todos os services
+ * e os injeta nas controladoras, sendo o único lugar no frontend onde
+ * dependências concretas são criadas.
+ *
+ * Princípios SOLID aplicados:
+ *  - DIP: Cria HttpClient e os services; injeta-os nas controladoras.
+ *  - ISP: Cada controladora recebe apenas o service que utiliza.
+ *  - OCP: Para trocar a implementação de um service, basta substituir
+ *         a instância aqui sem modificar nenhuma controladora.
  */
 class Interface {
 
     constructor() {
-        this.controladoraAuth = new ControladoraAutenticacao();
-        this.controladoraInfo = new ControladoraInformativo();
-        this.controladoraProjetos = new ControladoraProjetos();
+        // === COMPOSITION ROOT (DIP) ===
+        // Único ponto no frontend onde dependências concretas são instanciadas.
+        const httpClient = new HttpClient();
+
+        // Services segregados por domínio (ISP)
+        const authService = new AuthService(httpClient);
+        const informativoService = new InformativoService(httpClient);
+        const projetoService = new ProjetoService(httpClient);
+        this.eventoService = new EventoService(httpClient);
+
+        // Controllers recebem apenas o service que precisam (DIP + ISP)
+        this.controladoraAuth = new ControladoraAutenticacao(authService);
+        this.controladoraInfo = new ControladoraInformativo(informativoService);
+        this.controladoraProjetos = new ControladoraProjetos(projetoService);
 
         this.dataAtualCalendario = new Date();
         this.mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -350,14 +370,9 @@ class Interface {
                     preview.style.backgroundPosition = 'center';
                 }
 
-                // Persiste no MongoDB
+                // Persiste no MongoDB via AuthService (DIP)
                 try {
-                    const resposta = await fetch('/api/auth/profile', {
-                        method: 'PUT',
-                        headers: this.controladoraAuth.getAuthHeaders(),
-                        credentials: 'same-origin',
-                        body: JSON.stringify({ avatar: base64 })
-                    });
+                    const resposta = await this.controladoraAuth.authService.updateProfile({ avatar: base64 });
 
                     if (resposta.ok) {
                         const data = await resposta.json();
@@ -745,11 +760,7 @@ class Interface {
         const descricao = document.getElementById('agendaModalDesc').value;
         
         try {
-            const resposta = await fetch('/api/events', {
-                method: 'POST',
-                headers: this.controladoraAuth.getAuthHeaders(),
-                body: JSON.stringify({ titulo, descricao, data })
-            });
+            const resposta = await this.eventoService.create({ titulo, descricao, data });
             
             const resData = await resposta.json();
             
@@ -782,10 +793,7 @@ class Interface {
         if (!confirm("Deseja realmente remover este compromisso da agenda?")) return;
         
         try {
-            const resposta = await fetch(`/api/events/${id}`, {
-                method: 'DELETE',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
+            const resposta = await this.eventoService.remove(id);
             
             const resData = await resposta.json();
             
@@ -820,10 +828,7 @@ class Interface {
         container.innerHTML = `<div class="col-12 text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div> Carregando compromissos...</div>`;
         
         try {
-            const resposta = await fetch('/api/events', {
-                method: 'GET',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
+            const resposta = await this.eventoService.getAll();
             
             if (!resposta.ok) {
                 if (resposta.status === 401) {
@@ -877,10 +882,7 @@ class Interface {
         container.innerHTML = `<tr><td colspan="4" class="text-center"><div class="spinner-border spinner-border-sm text-success"></div> Carregando feed...</td></tr>`;
 
         try {
-            const resposta = await fetch('/api/informatives', {
-                method: 'GET',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
+            const resposta = await this.controladoraInfo.informativoService.getAll();
 
             if (!resposta.ok) {
                 if (resposta.status === 401) {
@@ -945,11 +947,7 @@ class Interface {
     async adminExcluirInfo(id) {
         if (confirm("Deseja realmente excluir este informativo permanentemente?")) {
             try {
-                const resposta = await fetch(`/api/informatives/${id}`, {
-                    method: 'DELETE',
-                    headers: this.controladoraAuth.getAuthHeaders()
-                });
-
+                const resposta = await this.controladoraInfo.informativoService.remove(id);
                 if (resposta.ok) {
                     alert("Informativo excluído.");
                     this.controladoraInfo.carregarInformativos();
@@ -976,10 +974,7 @@ class Interface {
         container.innerHTML = `<tr><td colspan="4" class="text-center"><div class="spinner-border spinner-border-sm text-warning"></div> Carregando projetos...</td></tr>`;
 
         try {
-            const resposta = await fetch('/api/projects', {
-                method: 'GET',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
+            const resposta = await this.controladoraProjetos.projetoService.getAll();
 
             if (!resposta.ok) {
                 if (resposta.status === 401) {
@@ -1030,11 +1025,7 @@ class Interface {
     async adminExcluirProjeto(id) {
         if (confirm("Deseja realmente excluir este projeto permanentemente?")) {
             try {
-                const resposta = await fetch(`/api/projects/${id}`, {
-                    method: 'DELETE',
-                    headers: this.controladoraAuth.getAuthHeaders()
-                });
-
+                const resposta = await this.controladoraProjetos.projetoService.remove(id);
                 if (resposta.ok) {
                     alert("Projeto excluído.");
                     this.controladoraProjetos.exibirProjetos();
@@ -1060,10 +1051,7 @@ class Interface {
         container.innerHTML = `<tr><td colspan="4" class="text-center"><div class="spinner-border spinner-border-sm text-danger"></div> Carregando compromissos...</td></tr>`;
 
         try {
-            const resposta = await fetch('/api/events', {
-                method: 'GET',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
+            const resposta = await this.eventoService.getAll();
 
             if (!resposta.ok) {
                 if (resposta.status === 401) {
@@ -1105,10 +1093,7 @@ class Interface {
     async adminExcluirEvento(id) {
         if (confirm("Deseja realmente excluir este compromisso da agenda permanentemente?")) {
             try {
-                const resposta = await fetch(`/api/events/${id}`, {
-                    method: 'DELETE',
-                    headers: this.controladoraAuth.getAuthHeaders()
-                });
+                const resposta = await this.eventoService.remove(id);
 
                 if (resposta.ok) {
                     alert("Compromisso excluído da agenda.");

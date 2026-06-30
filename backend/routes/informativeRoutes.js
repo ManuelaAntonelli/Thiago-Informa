@@ -1,16 +1,21 @@
 const express = require('express');
 const router = express.Router();
-const { getInformatives, createInformative, updateInformative, togglePinInformative, deleteInformative } = require('../controllers/informativeController');
+
+// DIP: injetamos o Model no controller ao instanciá-lo aqui (Composition Root do backend)
+const InformativeController = require('../controllers/informativeController');
+const Informative = require('../models/Informative');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
 
+const informativeController = new InformativeController(Informative);
+
 router.route('/')
-    .get(protect, getInformatives)
-    .post(protect, adminOnly, createInformative);
+    .get(protect, informativeController.getInformatives)
+    .post(protect, adminOnly, informativeController.createInformative);
 
 router.route('/:id')
-    .put(protect, adminOnly, updateInformative)
-    .delete(protect, adminOnly, deleteInformative);
+    .put(protect, adminOnly, informativeController.updateInformative)
+    .delete(protect, adminOnly, informativeController.deleteInformative);
 
-router.put('/:id/pin', protect, adminOnly, togglePinInformative);
+router.put('/:id/pin', protect, adminOnly, informativeController.togglePinInformative);
 
 module.exports = router;

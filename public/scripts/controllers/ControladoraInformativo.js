@@ -1,12 +1,18 @@
 /**
  * ControladoraInformativo
- * Responsabilidade única: gerenciar a exibição de informativos no feed
- * consumindo a API REST do backend Express + MongoDB.
+ *
+ * Princípios SOLID aplicados:
+ *  - SRP: Responsabilidade única — orquestrar a UI de informativos e o carrossel.
+ *         Toda comunicação com a API é delegada ao InformativoService injetado.
+ *  - DIP: Recebe informativoService via construtor em vez de instanciar fetch diretamente.
  */
 class ControladoraInformativo {
 
-    constructor() {
-        this.controladoraAuth = new ControladoraAutenticacao();
+    /**
+     * @param {InformativoService} informativoService - Service de informativos injetado (DIP)
+     */
+    constructor(informativoService) {
+        this.informativoService = informativoService;
         this.listaInformativos = [];
 
         // Estado do Carrossel de Fixados
@@ -24,23 +30,16 @@ class ControladoraInformativo {
         if (!container) return;
 
         try {
-            const resposta = await fetch('/api/informatives', {
-                method: 'GET',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
+            const resposta = await this.informativoService.getAll();
 
             if (!resposta.ok) {
-                if (resposta.status === 401) {
-                    app.logout();
-                    return;
-                }
+                if (resposta.status === 401) { app.logout(); return; }
                 container.innerHTML = "<p class='text-center text-danger mt-4'>Erro ao carregar feed.</p>";
                 return;
             }
 
             const data = await resposta.json();
             this.listaInformativos = data;
-
             container.innerHTML = "";
 
             if (data.length === 0) {
@@ -48,7 +47,6 @@ class ControladoraInformativo {
                 return;
             }
 
-            // Exibir em ordem reversa de criação (mais recentes primeiro)
             data.slice().reverse().forEach(info => {
                 const blocoImagem = info.imagem && info.imagem !== ""
                     ? `<img src="${info.imagem}" class="img-fluid rounded w-100 shadow-sm bg-light" style="object-fit: cover; height: 100%; min-height: 150px; border: 1px solid #dee2e6;" alt="Capa do post">`
@@ -64,7 +62,6 @@ class ControladoraInformativo {
                 container.innerHTML += `
                     <div class="col-12">
                         <div class="card p-3 shadow-sm mb-3 position-relative modal-figma-border bg-white">
-                            
                             <div class="position-absolute top-0 end-0 p-3 d-flex gap-2 z-1 apenas-admin">
                                 <button class="btn btn-light rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width: 35px; height: 35px; border: 2px solid #000;" onclick="app.alternarFixado('${info._id}')" title="Fixar Post">
                                     <i class="fa-solid fa-thumbtack ${corAlfinete}"></i>
@@ -76,32 +73,23 @@ class ControladoraInformativo {
                                     <i class="fa-solid fa-trash text-white"></i>
                                 </button>
                             </div>
- 
                             <div class="d-md-none mb-3 pe-5">
                                 <span class="fw-bold fs-6 text-dark d-block">${info.titulo}</span>
                                 <small class="text-muted fw-bold d-block mt-1" style="font-size: 0.75rem;">
                                     <i class="fa-regular fa-clock me-1"></i> ${info.data}
                                 </small>
                             </div>
- 
                             <div class="row g-3">
-                                
-                                <div class="col-12 col-md-4 col-lg-4">
-                                    ${blocoImagem}
-                                </div>
- 
+                                <div class="col-12 col-md-4 col-lg-4">${blocoImagem}</div>
                                 <div class="col-12 col-md-8 col-lg-8 d-flex flex-column justify-content-center">
-                                    
                                     <div class="d-none d-md-block pe-5 mb-2">
                                         <span class="fw-bold fs-6 text-dark d-block">${info.titulo}</span>
                                         <small class="text-muted fw-bold d-block mt-1" style="font-size: 0.75rem;">
                                             <i class="fa-regular fa-clock me-1"></i> ${info.data}
                                         </small>
                                     </div>
-                                    
                                     <p class="text-dark small mb-0 mt-2" style="text-align: justify;">${info.descricao}</p>
                                 </div>
-                                
                             </div>
                         </div>
                     </div>
@@ -120,25 +108,18 @@ class ControladoraInformativo {
         const container = document.getElementById('container-fixados-scroll');
         const btnPrev = document.getElementById('btn-prev-fixado');
         const btnNext = document.getElementById('btn-next-fixado');
-
         if (!container) return;
 
         try {
-            const resposta = await fetch('/api/informatives', {
-                method: 'GET',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
+            const resposta = await this.informativoService.getAll();
 
             if (!resposta.ok) {
-                if (resposta.status === 401) {
-                    app.logout();
-                }
+                if (resposta.status === 401) { app.logout(); }
                 return;
             }
 
             const data = await resposta.json();
             const fixados = data.filter(info => info.fixado).reverse();
-
             container.innerHTML = "";
 
             if (fixados.length === 0) {
@@ -155,7 +136,6 @@ class ControladoraInformativo {
                     <div class="col-6 col-md-4 col-lg-3">
                         <div class="card card-fixado p-3 position-relative h-100 modal-figma-border bg-white">
                             <i class="fa-solid fa-thumbtack position-absolute top-0 end-0 m-2 text-danger cursor-pointer apenas-admin" style="transform: rotate(45deg); z-index: 2;" onclick="app.alternarFixado('${info._id}')" title="Desfixar"></i>
-                            
                             <div onclick="app.abrirModalVisualizarInfo('${info._id}')" style="cursor: pointer;" class="h-100 d-flex flex-column">
                                 <span class="fw-bold small d-block text-truncate pe-4 text-dark">${info.titulo}</span>
                                 <p class="text-muted small mb-0 mt-1 text-truncate-2" style="text-align: justify;">${info.descricao}</p>
@@ -168,13 +148,13 @@ class ControladoraInformativo {
             if (fixados.length <= 4) {
                 if (btnPrev) btnPrev.className = "btn p-0 border-0 position-absolute start-0 top-50 translate-middle-y z-3 d-none";
                 if (btnNext) btnNext.className = "btn p-0 border-0 position-absolute end-0 top-50 translate-middle-y z-3 d-none";
-                this.deveGirarCarrossel = false; 
-                clearInterval(this.carrosselIntervalo); 
+                this.deveGirarCarrossel = false;
+                clearInterval(this.carrosselIntervalo);
             } else {
                 if (btnPrev) btnPrev.className = "btn p-0 border-0 position-absolute start-0 top-50 translate-middle-y z-3 d-none d-md-block";
                 if (btnNext) btnNext.className = "btn p-0 border-0 position-absolute end-0 top-50 translate-middle-y z-3 d-none d-md-block";
-                this.deveGirarCarrossel = true; 
-                this.iniciarCarrossel(); 
+                this.deveGirarCarrossel = true;
+                this.iniciarCarrossel();
             }
         } catch (error) {
             console.error(error);
@@ -182,7 +162,7 @@ class ControladoraInformativo {
     }
 
     /**
-     * Cria um novo informativo (post) enviando os dados para a API do Express.
+     * Cria um novo informativo (post).
      */
     async criarInformativo() {
         const titulo = document.getElementById('inputTituloInfo').value;
@@ -196,24 +176,18 @@ class ControladoraInformativo {
 
         const enviarParaAPI = async (imagemBase64) => {
             try {
-                const resposta = await fetch('/api/informatives', {
-                    method: 'POST',
-                    headers: this.controladoraAuth.getAuthHeaders(),
-                    body: JSON.stringify({ titulo, descricao: desc, imagem: imagemBase64 })
+                const resposta = await this.informativoService.create({
+                    titulo, descricao: desc, imagem: imagemBase64
                 });
 
                 if (resposta.ok) {
                     document.getElementById('formInformativo').reset();
                     this.removerPreviewImagem('previewContainerCriar', null);
-
                     const modalInstancia = bootstrap.Modal.getInstance(document.getElementById('modalInformativo'));
                     if (modalInstancia) modalInstancia.hide();
-
                     this.carregarInformativos();
                     this.carregarFixados();
-                    if (typeof app.adminCarregarInformativos === 'function') {
-                        app.adminCarregarInformativos();
-                    }
+                    if (typeof app.adminCarregarInformativos === 'function') app.adminCarregarInformativos();
                 } else {
                     const data = await resposta.json();
                     alert(data.message || "Erro ao criar post.");
@@ -226,9 +200,7 @@ class ControladoraInformativo {
 
         if (inputImagem.files && inputImagem.files[0]) {
             const leitor = new FileReader();
-            leitor.onload = function (evento) {
-                enviarParaAPI(evento.target.result);
-            };
+            leitor.onload = function (evento) { enviarParaAPI(evento.target.result); };
             leitor.readAsDataURL(inputImagem.files[0]);
         } else {
             enviarParaAPI("");
@@ -236,12 +208,11 @@ class ControladoraInformativo {
     }
 
     /**
-     * Abre o modal de edição preenchido com os dados do post específico.
+     * Abre o modal de edição preenchido com os dados do post.
      * @param {string} id
      */
     abrirModalEditarInfo(id) {
         const info = this.listaInformativos.find(i => i._id === id);
-
         if (info) {
             document.getElementById('editIdInfo').value = info._id;
             document.getElementById('editTituloInfo').value = info.titulo;
@@ -259,14 +230,12 @@ class ControladoraInformativo {
                     </div>
                 `;
             }
-
-            const modalEdicao = new bootstrap.Modal(document.getElementById('modalEditarInformativo'));
-            modalEdicao.show();
+            new bootstrap.Modal(document.getElementById('modalEditarInformativo')).show();
         }
     }
 
     /**
-     * Salva as edições do post enviando a requisição PUT para o Express.
+     * Salva as edições do post.
      */
     async editarInformativo() {
         const id = document.getElementById('editIdInfo').value;
@@ -282,22 +251,17 @@ class ControladoraInformativo {
 
         const enviarPUT = async (imagemBase64) => {
             try {
-                const resposta = await fetch(`/api/informatives/${id}`, {
-                    method: 'PUT',
-                    headers: this.controladoraAuth.getAuthHeaders(),
-                    body: JSON.stringify({ titulo: novoTitulo, descricao: novaDesc, imagem: imagemBase64 })
+                const resposta = await this.informativoService.update(id, {
+                    titulo: novoTitulo, descricao: novaDesc, imagem: imagemBase64
                 });
 
                 if (resposta.ok) {
                     document.getElementById('formEditarInformativo').reset();
                     const modalInstancia = bootstrap.Modal.getInstance(document.getElementById('modalEditarInformativo'));
                     if (modalInstancia) modalInstancia.hide();
-
-                    this.carregarInformativos(); 
+                    this.carregarInformativos();
                     this.carregarFixados();
-                    if (typeof app.adminCarregarInformativos === 'function') {
-                        app.adminCarregarInformativos();
-                    }
+                    if (typeof app.adminCarregarInformativos === 'function') app.adminCarregarInformativos();
                 } else {
                     const data = await resposta.json();
                     alert(data.message || "Erro ao editar post.");
@@ -310,9 +274,7 @@ class ControladoraInformativo {
 
         if (inputNovaImagem.files && inputNovaImagem.files[0]) {
             const leitor = new FileReader();
-            leitor.onload = function (evento) {
-                enviarPUT(evento.target.result); 
-            };
+            leitor.onload = function (evento) { enviarPUT(evento.target.result); };
             leitor.readAsDataURL(inputNovaImagem.files[0]);
         } else {
             enviarPUT(imagemAtual);
@@ -320,23 +282,17 @@ class ControladoraInformativo {
     }
 
     /**
-     * Exclui um post pelo ID no backend.
+     * Exclui um post pelo ID.
      * @param {string} id
      */
     async excluirInfo(id) {
         if (confirm("Tem certeza que deseja excluir este post permanentemente?")) {
             try {
-                const resposta = await fetch(`/api/informatives/${id}`, {
-                    method: 'DELETE',
-                    headers: this.controladoraAuth.getAuthHeaders()
-                });
-
+                const resposta = await this.informativoService.remove(id);
                 if (resposta.ok) {
-                    this.carregarInformativos(); 
+                    this.carregarInformativos();
                     this.carregarFixados();
-                    if (typeof app.adminCarregarInformativos === 'function') {
-                        app.adminCarregarInformativos();
-                    }
+                    if (typeof app.adminCarregarInformativos === 'function') app.adminCarregarInformativos();
                 } else {
                     const data = await resposta.json();
                     alert(data.message || "Erro ao excluir post.");
@@ -349,22 +305,16 @@ class ControladoraInformativo {
     }
 
     /**
-     * Alterna o estado de fixado de um post na API do Express.
-     * @param {string} id 
+     * Alterna o estado de fixado de um post.
+     * @param {string} id
      */
     async alternarFixado(id) {
         try {
-            const resposta = await fetch(`/api/informatives/${id}/pin`, {
-                method: 'PUT',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
-
+            const resposta = await this.informativoService.togglePin(id);
             if (resposta.ok) {
                 this.carregarInformativos();
                 this.carregarFixados();
-                if (typeof app.adminCarregarInformativos === 'function') {
-                    app.adminCarregarInformativos();
-                }
+                if (typeof app.adminCarregarInformativos === 'function') app.adminCarregarInformativos();
             } else {
                 const data = await resposta.json();
                 alert(data.message || "Erro ao alternar fixação.");
@@ -376,11 +326,10 @@ class ControladoraInformativo {
     }
 
     /**
-     * Gera o preview visual de uma imagem selecionada pelo usuário no input file.
+     * Gera o preview visual de uma imagem selecionada.
      */
     gerarPreviewImagem(inputElement, containerId) {
         const container = document.getElementById(containerId);
-
         if (inputElement.files && inputElement.files[0]) {
             const leitor = new FileReader();
             leitor.onload = function (e) {
@@ -401,13 +350,11 @@ class ControladoraInformativo {
                 <span class="fw-bold d-block small">NO IMAGE AVAILABLE</span>
             </div>
         `;
-
-        const inputFisico = containerId === 'previewContainerCriar' ? document.getElementById('inputImagemInfo') : document.getElementById('editNovaImagemInfo');
+        const inputFisico = containerId === 'previewContainerCriar'
+            ? document.getElementById('inputImagemInfo')
+            : document.getElementById('editNovaImagemInfo');
         if (inputFisico) inputFisico.value = "";
-
-        if (hiddenInputId) {
-            document.getElementById(hiddenInputId).value = "";
-        }
+        if (hiddenInputId) document.getElementById(hiddenInputId).value = "";
     }
 
     /**
@@ -419,45 +366,36 @@ class ControladoraInformativo {
     }
 
     /**
-     * Rola o carrossel para a esquerda ou direita manipulando o DOM.
+     * Rola o carrossel para a esquerda ou direita.
      * @param {number} direcao (1 para direita, -1 para esquerda)
      */
     scrollCarrossel(direcao) {
         if (!this.deveGirarCarrossel) return;
-
         const container = document.getElementById('container-fixados-scroll');
         if (!container || this.isScrolling) return;
 
         this.isScrolling = true;
-
         clearInterval(this.carrosselIntervalo);
         this.carrosselIntervalo = setInterval(() => this.scrollCarrossel(1), this.tempoRolagem);
 
         const primeiroCartao = container.firstElementChild;
-        if (!primeiroCartao) {
-            this.isScrolling = false;
-            return;
-        }
+        if (!primeiroCartao) { this.isScrolling = false; return; }
         const quantidadeScroll = primeiroCartao.offsetWidth + 16;
 
         if (direcao === 1) {
             container.style.scrollBehavior = 'smooth';
             container.scrollBy({ left: quantidadeScroll });
-
             setTimeout(() => {
                 container.style.scrollBehavior = 'auto';
                 container.appendChild(primeiroCartao);
                 container.scrollLeft -= quantidadeScroll;
                 this.isScrolling = false;
             }, 600);
-
         } else {
             container.style.scrollBehavior = 'auto';
             const ultimoCartao = container.lastElementChild;
-
             container.insertBefore(ultimoCartao, primeiroCartao);
             container.scrollLeft += quantidadeScroll;
-
             requestAnimationFrame(() => {
                 container.style.scrollBehavior = 'smooth';
                 container.scrollBy({ left: -quantidadeScroll });
@@ -472,10 +410,8 @@ class ControladoraInformativo {
      */
     abrirModalVisualizarInfo(id) {
         const info = this.listaInformativos.find(i => i._id === id);
-
         if (info) {
             const container = document.getElementById('conteudoVisualizarInformativo');
-            
             const blocoImagem = info.imagem && info.imagem !== ""
                 ? `<img src="${info.imagem}" class="img-fluid rounded w-100 shadow-sm bg-light" style="object-fit: cover; height: 100%; min-height: 150px; border: 1px solid #dee2e6;" alt="Capa do post">`
                 : `<div class="img-preview-box w-100 shadow-sm" style="height: 100%; min-height: 150px;">
@@ -492,12 +428,8 @@ class ControladoraInformativo {
                         <i class="fa-regular fa-clock me-1"></i> ${info.data}
                     </small>
                 </div>
-
                 <div class="row g-3">
-                    <div class="col-12 col-md-4 col-lg-4">
-                        ${blocoImagem}
-                    </div>
-
+                    <div class="col-12 col-md-4 col-lg-4">${blocoImagem}</div>
                     <div class="col-12 col-md-8 col-lg-8 d-flex flex-column justify-content-start">
                         <div class="d-none d-md-block mb-2">
                             <span class="fw-bold fs-6 text-dark d-block">${info.titulo}</span>
@@ -505,14 +437,11 @@ class ControladoraInformativo {
                                 <i class="fa-regular fa-clock me-1"></i> ${info.data}
                             </small>
                         </div>
-                        
                         <p class="text-dark small mb-0 mt-2" style="text-align: justify;">${info.descricao}</p>
                     </div>
                 </div>
             `;
-
-            const modalVisualizar = new bootstrap.Modal(document.getElementById('modalVisualizarInformativo'));
-            modalVisualizar.show();
+            new bootstrap.Modal(document.getElementById('modalVisualizarInformativo')).show();
         }
     }
 }

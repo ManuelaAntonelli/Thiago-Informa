@@ -1,17 +1,23 @@
 /**
  * ControladoraProjetos
- * Responsabilidade única: gerenciar o CRUD de projetos com suporte a imagens
- * consumindo a API REST do backend Express + MongoDB.
+ *
+ * Princípios SOLID aplicados:
+ *  - SRP: Responsabilidade única — orquestrar a UI de projetos (DOM e estado).
+ *         Toda comunicação com a API é delegada ao ProjetoService injetado.
+ *  - DIP: Recebe projetoService via construtor em vez de instanciar fetch diretamente.
  */
 class ControladoraProjetos {
 
-    constructor() {
-        this.controladoraAuth = new ControladoraAutenticacao();
+    /**
+     * @param {ProjetoService} projetoService - Service de projetos injetado (DIP)
+     */
+    constructor(projetoService) {
+        this.projetoService = projetoService;
         this.listaProjetos = [];
     }
 
     /**
-     * Cria um novo projeto enviando dados para a API do Express.
+     * Cria um novo projeto enviando dados para a API.
      */
     async criarProjeto() {
         const nome = document.getElementById('inputNomeProjeto').value;
@@ -26,23 +32,17 @@ class ControladoraProjetos {
 
         const enviarParaAPI = async (imagemBase64) => {
             try {
-                const resposta = await fetch('/api/projects', {
-                    method: 'POST',
-                    headers: this.controladoraAuth.getAuthHeaders(),
-                    body: JSON.stringify({ nome_projeto: nome, descricao: desc, turma, imagem: imagemBase64 })
+                const resposta = await this.projetoService.create({
+                    nome_projeto: nome, descricao: desc, turma, imagem: imagemBase64
                 });
 
                 if (resposta.ok) {
                     document.getElementById('formProjeto').reset();
                     app.removerPreviewImagem('previewContainerProjetoCriar', null);
-
                     const modal = bootstrap.Modal.getInstance(document.getElementById('modalProjeto'));
                     if (modal) modal.hide();
-
                     this.exibirProjetos();
-                    if (typeof app.adminCarregarProjetos === 'function') {
-                        app.adminCarregarProjetos();
-                    }
+                    if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
                 } else {
                     const data = await resposta.json();
                     alert(data.message || "Erro ao criar projeto.");
@@ -68,7 +68,6 @@ class ControladoraProjetos {
      */
     abrirModalEditar(id) {
         const projeto = this.listaProjetos.find(p => p._id === id);
-
         if (projeto) {
             document.getElementById('editIdProjeto').value = projeto._id;
             document.getElementById('editNomeProjeto').value = projeto.nome_projeto;
@@ -82,13 +81,12 @@ class ControladoraProjetos {
             } else {
                 containerPreview.innerHTML = `<div class="text-center text-muted"><i class="fa-regular fa-image fs-1"></i></div>`;
             }
-
             new bootstrap.Modal(document.getElementById('modalEditarProjeto')).show();
         }
     }
 
     /**
-     * Edita um projeto existente na API do Express.
+     * Edita um projeto existente na API.
      */
     async editarProjeto() {
         const id = document.getElementById('editIdProjeto').value;
@@ -105,19 +103,15 @@ class ControladoraProjetos {
 
         const enviarPUT = async (imagemBase64) => {
             try {
-                const resposta = await fetch(`/api/projects/${id}`, {
-                    method: 'PUT',
-                    headers: this.controladoraAuth.getAuthHeaders(),
-                    body: JSON.stringify({ nome_projeto: novoNome, descricao: novaDesc, turma: novaTurma, imagem: imagemBase64 })
+                const resposta = await this.projetoService.update(id, {
+                    nome_projeto: novoNome, descricao: novaDesc, turma: novaTurma, imagem: imagemBase64
                 });
 
                 if (resposta.ok) {
                     document.getElementById('formEditarProjeto').reset();
                     bootstrap.Modal.getInstance(document.getElementById('modalEditarProjeto')).hide();
                     this.exibirProjetos();
-                    if (typeof app.adminCarregarProjetos === 'function') {
-                        app.adminCarregarProjetos();
-                    }
+                    if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
                 } else {
                     const data = await resposta.json();
                     alert(data.message || "Erro ao atualizar projeto.");
@@ -154,16 +148,10 @@ class ControladoraProjetos {
         if (!container) return;
 
         try {
-            const resposta = await fetch('/api/projects', {
-                method: 'GET',
-                headers: this.controladoraAuth.getAuthHeaders()
-            });
+            const resposta = await this.projetoService.getAll();
 
             if (!resposta.ok) {
-                if (resposta.status === 401) {
-                    app.logout();
-                    return;
-                }
+                if (resposta.status === 401) { app.logout(); return; }
                 container.innerHTML = "<p class='text-center text-danger'>Erro ao carregar projetos.</p>";
                 return;
             }
@@ -222,16 +210,10 @@ class ControladoraProjetos {
     async excluirProjeto(id) {
         if (confirm("Tem certeza que deseja excluir este projeto?")) {
             try {
-                const resposta = await fetch(`/api/projects/${id}`, {
-                    method: 'DELETE',
-                    headers: this.controladoraAuth.getAuthHeaders()
-                });
-
+                const resposta = await this.projetoService.remove(id);
                 if (resposta.ok) {
                     this.exibirProjetos();
-                    if (typeof app.adminCarregarProjetos === 'function') {
-                        app.adminCarregarProjetos();
-                    }
+                    if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
                 } else {
                     const data = await resposta.json();
                     alert(data.message || "Erro ao excluir projeto.");

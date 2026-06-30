@@ -1,17 +1,24 @@
 /**
  * ControladoraAutenticacao (Singleton)
- * Responsabilidade única: gerenciar autenticação, cadastro e perfil de usuários
- * consumindo a API REST do backend Express + MongoDB.
+ *
+ * Princípios SOLID aplicados:
+ *  - SRP: Responsabilidade única — orquestrar a UI de autenticação e perfil.
+ *         Comunicação com a API delegada ao AuthService injetado.
+ *  - DIP: Recebe authService via construtor em vez de instanciar fetch diretamente.
  *
  * Sessão gerenciada via cookie HttpOnly — zero localStorage.
  */
 class ControladoraAutenticacao {
 
-    constructor() {
+    /**
+     * @param {AuthService} authService - Service de autenticação injetado (DIP)
+     */
+    constructor(authService) {
         if (ControladoraAutenticacao.instancia) {
             return ControladoraAutenticacao.instancia;
         }
 
+        this.authService = authService;
         this.conta_logada = false;
         this.usuarioLogado = null;
         this.usuarioLogadoUsername = null;
@@ -21,16 +28,11 @@ class ControladoraAutenticacao {
 
     /**
      * Verifica se existe uma sessão ativa consultando o servidor via cookie.
-     * Deve ser chamado na inicialização da Interface.
      * @returns {Promise<boolean>}
      */
     async verificarSessao() {
         try {
-            const resposta = await fetch('/api/auth/me', {
-                method: 'GET',
-                credentials: 'same-origin'
-            });
-
+            const resposta = await this.authService.getMe();
             if (resposta.ok) {
                 const data = await resposta.json();
                 this.conta_logada = true;
@@ -51,45 +53,32 @@ class ControladoraAutenticacao {
 
     /**
      * Retorna os headers padrões para requisições autenticadas.
-     * O token é enviado automaticamente via cookie — apenas Content-Type é necessário.
+     * Mantido por compatibilidade com chamadas diretas na Interface (ex.: carregarAvatarPerfil).
      */
     getAuthHeaders() {
-        return {
-            'Content-Type': 'application/json'
-        };
+        return { 'Content-Type': 'application/json' };
     }
 
     /**
-     * Verifica as credenciais e executa o login no backend.
-     * O servidor define o cookie HttpOnly com o token JWT.
+     * Verifica as credenciais e executa o login.
      * @param {Event} event
      * @returns {Promise<boolean>}
      */
     async verificaLogin(event) {
         event.preventDefault();
-
         const usuarioInput = document.getElementById('usuario').value;
         const senhaInput = document.getElementById('senha').value;
 
         try {
-            const resposta = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ usuario: usuarioInput, senha: senhaInput })
-            });
-
+            const resposta = await this.authService.login(usuarioInput, senhaInput);
             const data = await resposta.json();
-
             if (!resposta.ok) {
                 alert(data.message || "Erro ao fazer login.");
                 return false;
             }
-
             this.conta_logada = true;
             this.usuarioLogado = data;
             this.usuarioLogadoUsername = data.usuario;
-
             return true;
         } catch (error) {
             console.error(error);
@@ -120,22 +109,13 @@ class ControladoraAutenticacao {
         }
 
         try {
-            const resposta = await fetch('/api/auth/register', {
-                method: 'POST',
-                headers: this.getAuthHeaders(),
-                credentials: 'same-origin',
-                body: JSON.stringify({ nome, usuario, senha, perfil: 'Responsável' })
-            });
-
+            const resposta = await this.authService.register(nome, usuario, senha, 'Responsável');
             const data = await resposta.json();
-
             if (!resposta.ok) {
                 alert(data.message || "Erro ao criar responsável.");
                 return;
             }
-
             alert("Responsável criado com sucesso!");
-
             document.getElementById('formNovoResponsavel').reset();
             bootstrap.Modal.getInstance(document.getElementById('modalCadastrarResponsavel')).hide();
         } catch (error) {
@@ -150,8 +130,7 @@ class ControladoraAutenticacao {
     abrirModalEditarUsuario() {
         if (this.usuarioLogado) {
             document.getElementById('editNomeUsuario').value = this.usuarioLogado.nome;
-            document.getElementById('editSenhaUsuario').value = ""; // Vazio por segurança
-
+            document.getElementById('editSenhaUsuario').value = "";
             document.getElementById('menu-opcoes').classList.add('d-none');
             new bootstrap.Modal(document.getElementById('modalEditarUsuario')).show();
         }
@@ -159,38 +138,24 @@ class ControladoraAutenticacao {
 
     /**
      * Salva as alterações do perfil do próprio usuário logado.
-     * O avatar (se alterado) também é salvo no MongoDB.
      */
     async salvarEdicaoUsuario() {
         const novoNome = document.getElementById('editNomeUsuario').value;
         const novaSenha = document.getElementById('editSenhaUsuario').value;
 
         const bodyData = { nome: novoNome };
-        if (novaSenha.trim() !== "") {
-            bodyData.senha = novaSenha;
-        }
+        if (novaSenha.trim() !== "") bodyData.senha = novaSenha;
 
         try {
-            const resposta = await fetch('/api/auth/profile', {
-                method: 'PUT',
-                headers: this.getAuthHeaders(),
-                credentials: 'same-origin',
-                body: JSON.stringify(bodyData)
-            });
-
+            const resposta = await this.authService.updateProfile(bodyData);
             const data = await resposta.json();
-
             if (!resposta.ok) {
                 alert(data.message || "Erro ao atualizar perfil.");
                 return;
             }
-
             this.usuarioLogado = data;
             this.usuarioLogadoUsername = data.usuario;
-
-            // Atualiza campos na UI
             app.preencherPerfil(data);
-
             bootstrap.Modal.getInstance(document.getElementById('modalEditarUsuario')).hide();
             alert("Perfil atualizado com sucesso!");
         } catch (error) {
@@ -205,15 +170,9 @@ class ControladoraAutenticacao {
      */
     async excluirConta(onLogout) {
         if (!this.usuarioLogado) return;
-
         if (confirm("Tem certeza que deseja excluir sua conta DEFINITIVAMENTE? Você perderá o acesso.")) {
             try {
-                const resposta = await fetch(`/api/auth/users/${this.usuarioLogado._id}`, {
-                    method: 'DELETE',
-                    headers: this.getAuthHeaders(),
-                    credentials: 'same-origin'
-                });
-
+                const resposta = await this.authService.deleteUser(this.usuarioLogado._id);
                 if (resposta.ok) {
                     alert("Conta excluída.");
                     if (onLogout) onLogout();
@@ -235,41 +194,25 @@ class ControladoraAutenticacao {
         this.conta_logada = false;
         this.usuarioLogado = null;
         this.usuarioLogadoUsername = null;
-
         try {
-            await fetch('/api/auth/logout', {
-                method: 'POST',
-                credentials: 'same-origin'
-            });
+            await this.authService.logout();
         } catch (error) {
             console.error('Erro ao fazer logout no servidor:', error);
         }
     }
 
     // ======================================
-    // MÉTODOS DO PAINEL ADMIN (Mapeados na API)
+    // MÉTODOS DO PAINEL ADMIN
     // ======================================
 
     /**
      * Obtém a lista de responsáveis do banco de dados (Apenas Admin).
      */
     async obterResponsaveis() {
-        console.log("Chamando obterResponsaveis...");
         try {
-            const resposta = await fetch('/api/auth/responsibles', {
-                method: 'GET',
-                headers: this.getAuthHeaders(),
-                credentials: 'same-origin'
-            });
-
-            console.log("Resposta obtida, status:", resposta.status);
+            const resposta = await this.authService.getResponsibles();
             const data = await resposta.json();
-            console.log("Dados do JSON decodificados:", data);
-
-            if (!resposta.ok) {
-                throw new Error(data.message || "Erro ao obter responsáveis.");
-            }
-
+            if (!resposta.ok) throw new Error(data.message || "Erro ao obter responsáveis.");
             return data;
         } catch (error) {
             console.error("Erro na chamada obterResponsaveis:", error);
@@ -281,21 +224,10 @@ class ControladoraAutenticacao {
      * Registra um novo responsável pelo painel admin.
      */
     async registrarResponsavel(nome, usuario, senha, perfil = 'Responsável') {
-        console.log("Chamando registrarResponsavel para:", usuario);
         try {
-            const resposta = await fetch('/api/auth/register', {
-                method: 'POST',
-                headers: this.getAuthHeaders(),
-                credentials: 'same-origin',
-                body: JSON.stringify({ nome, usuario, senha, perfil })
-            });
-
+            const resposta = await this.authService.register(nome, usuario, senha, perfil);
             const data = await resposta.json();
-
-            if (!resposta.ok) {
-                throw new Error(data.message || "Erro ao registrar responsável.");
-            }
-
+            if (!resposta.ok) throw new Error(data.message || "Erro ao registrar responsável.");
             return data;
         } catch (error) {
             console.error("Erro na chamada registrarResponsavel:", error);
@@ -307,21 +239,10 @@ class ControladoraAutenticacao {
      * Altera a senha de um responsável pelo painel admin.
      */
     async alterarSenhaResponsavel(id, novaSenha) {
-        console.log("Chamando alterarSenhaResponsavel para ID:", id);
         try {
-            const resposta = await fetch(`/api/auth/users/${id}/password`, {
-                method: 'PUT',
-                headers: this.getAuthHeaders(),
-                credentials: 'same-origin',
-                body: JSON.stringify({ novaSenha })
-            });
-
+            const resposta = await this.authService.changePassword(id, novaSenha);
             const data = await resposta.json();
-
-            if (!resposta.ok) {
-                throw new Error(data.message || "Erro ao alterar senha do responsável.");
-            }
-
+            if (!resposta.ok) throw new Error(data.message || "Erro ao alterar senha do responsável.");
             return data;
         } catch (error) {
             console.error("Erro na chamada alterarSenhaResponsavel:", error);
@@ -333,20 +254,10 @@ class ControladoraAutenticacao {
      * Exclui um responsável pelo painel admin.
      */
     async excluirResponsavel(id) {
-        console.log("Chamando excluirResponsavel para ID:", id);
         try {
-            const resposta = await fetch(`/api/auth/users/${id}`, {
-                method: 'DELETE',
-                headers: this.getAuthHeaders(),
-                credentials: 'same-origin'
-            });
-
+            const resposta = await this.authService.deleteUser(id);
             const data = await resposta.json();
-
-            if (!resposta.ok) {
-                throw new Error(data.message || "Erro ao excluir responsável.");
-            }
-
+            if (!resposta.ok) throw new Error(data.message || "Erro ao excluir responsável.");
             return data;
         } catch (error) {
             console.error("Erro na chamada excluirResponsavel:", error);

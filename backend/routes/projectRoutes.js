@@ -1,14 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const { getProjects, createProject, updateProject, deleteProject } = require('../controllers/projectController');
+
+// DIP: injetamos o Model no controller ao instanciá-lo aqui (Composition Root do backend)
+const ProjectController = require('../controllers/projectController');
+const Project = require('../models/Project');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
 
+const projectController = new ProjectController(Project);
+
 router.route('/')
-    .get(protect, getProjects)
-    .post(protect, adminOnly, createProject);
+    .get(protect, projectController.getProjects)
+    .post(protect, adminOnly, projectController.createProject);
 
 router.route('/:id')
-    .put(protect, adminOnly, updateProject)
-    .delete(protect, adminOnly, deleteProject);
+    .put(protect, adminOnly, projectController.updateProject)
+    .delete(protect, adminOnly, projectController.deleteProject);
 
 module.exports = router;
