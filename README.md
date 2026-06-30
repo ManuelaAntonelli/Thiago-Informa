@@ -106,7 +106,12 @@ Permite:
 
 # Tecnologias Utilizadas
 
-Em discussão
+* HTML
+* CSS
+* JS
+* Node.js + express
+* MongoDB
+* GIT - GITHUB
 
 ---
 
