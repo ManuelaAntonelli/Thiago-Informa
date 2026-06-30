@@ -15,8 +15,6 @@ class Interface {
         this.dataAtualCalendario = new Date();
         this.mesesNomes = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
-        this._carregarAvatarSalvo();
-
         // Verifica se está rodando via file:///
         if (window.location.protocol === 'file:') {
             setTimeout(() => {
@@ -25,9 +23,9 @@ class Interface {
             }, 50);
         }
 
-        // Auto-login se já estiver autenticado no localStorage
-        if (this.controladoraAuth.conta_logada && this.controladoraAuth.usuarioLogado) {
-            setTimeout(() => {
+        // Auto-login via cookie HttpOnly: verifica sessão ativa no servidor
+        this.controladoraAuth.verificarSessao().then((logado) => {
+            if (logado) {
                 const elLogin = document.getElementById('tela-login');
                 const elHome = document.getElementById('tela-home');
                 if (elLogin && elHome) {
@@ -42,9 +40,10 @@ class Interface {
                     this.controladoraInfo.carregarFixados();
 
                     this.preencherPerfil(this.controladoraAuth.usuarioLogado);
+                    this._carregarAvatarSalvo();
                 }
-            }, 100);
-        }
+            }
+        });
     }
 
     // ========================
@@ -186,10 +185,10 @@ class Interface {
     }
 
     /**
-     * Realiza o logout.
+     * Realiza o logout: limpa o cookie via API e retorna à tela de login.
      */
-    logout() {
-        this.controladoraAuth.logout();
+    async logout() {
+        await this.controladoraAuth.logout();
 
         document.getElementById('menu-opcoes').classList.add('d-none');
         document.getElementById('tela-home').classList.add('d-none');
@@ -312,58 +311,36 @@ class Interface {
     }
 
     /**
-     * Carrega e salva a foto do avatar da tela de login.
-     * @param {HTMLInputElement} inputElement
-     */
-    carregarAvatarLogin(inputElement) {
-        if (inputElement.files && inputElement.files[0]) {
-            const leitor = new FileReader();
-            leitor.onload = function (e) {
-                const base64 = e.target.result;
-                localStorage.setItem('avatar_login_thiago_informa', base64);
-
-                const preview = document.getElementById('loginAvatarPreview');
-                const icone = document.getElementById('loginAvatarIcone');
-                if (preview) {
-                    if (icone) icone.style.display = 'none';
-                    preview.style.backgroundImage = `url(${base64})`;
-                    preview.style.backgroundSize = 'cover';
-                    preview.style.backgroundPosition = 'center';
-                }
-            };
-            leitor.readAsDataURL(inputElement.files[0]);
-        }
-    }
-
-    /**
-     * Restaura o avatar salvo no localStorage ao carregar a página.
+     * Restaura o avatar do usuário logado (salvo no MongoDB) na UI.
+     * Usado após login ou recarregamento via cookie.
      * @private
      */
     _carregarAvatarSalvo() {
-        const avatarSalvo = localStorage.getItem('avatar_login_thiago_informa');
-        if (avatarSalvo) {
-            const preview = document.getElementById('loginAvatarPreview');
-            const icone = document.getElementById('loginAvatarIcone');
-            if (preview) {
-                if (icone) icone.style.display = 'none';
-                preview.style.backgroundImage = `url(${avatarSalvo})`;
-                preview.style.backgroundSize = 'cover';
-                preview.style.backgroundPosition = 'center';
-            }
+        const user = this.controladoraAuth.usuarioLogado;
+        if (!user || !user.avatar) return;
+
+        // Avatar no perfil
+        const previewPerfil = document.getElementById('perfilAvatarPreview');
+        const iconePerfil = document.getElementById('perfilAvatarIcone');
+        if (previewPerfil) {
+            if (iconePerfil) iconePerfil.style.display = 'none';
+            previewPerfil.style.backgroundImage = `url(${user.avatar})`;
+            previewPerfil.style.backgroundSize = 'cover';
+            previewPerfil.style.backgroundPosition = 'center';
         }
     }
 
     /**
-     * Carrega e salva a foto do avatar da tela de perfil.
+     * Carrega a foto do avatar do perfil, salva no MongoDB via API e atualiza a UI.
      * @param {HTMLInputElement} inputElement
      */
     carregarAvatarPerfil(inputElement) {
         if (inputElement.files && inputElement.files[0]) {
             const leitor = new FileReader();
-            leitor.onload = function (e) {
+            leitor.onload = async (e) => {
                 const base64 = e.target.result;
-                localStorage.setItem('avatar_perfil_thiago_informa', base64);
 
+                // Atualiza preview imediatamente
                 const preview = document.getElementById('perfilAvatarPreview');
                 const icone = document.getElementById('perfilAvatarIcone');
                 if (preview) {
@@ -371,6 +348,25 @@ class Interface {
                     preview.style.backgroundImage = `url(${base64})`;
                     preview.style.backgroundSize = 'cover';
                     preview.style.backgroundPosition = 'center';
+                }
+
+                // Persiste no MongoDB
+                try {
+                    const resposta = await fetch('/api/auth/profile', {
+                        method: 'PUT',
+                        headers: this.controladoraAuth.getAuthHeaders(),
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ avatar: base64 })
+                    });
+
+                    if (resposta.ok) {
+                        const data = await resposta.json();
+                        this.controladoraAuth.usuarioLogado = data;
+                    } else {
+                        console.error('Erro ao salvar avatar no MongoDB.');
+                    }
+                } catch (error) {
+                    console.error('Erro de conexão ao salvar avatar:', error);
                 }
             };
             leitor.readAsDataURL(inputElement.files[0]);
@@ -392,20 +388,12 @@ class Interface {
         if (elUser) elUser.textContent = user.usuario;
         if (elPapel) elPapel.textContent = user.perfil;
 
-        this._carregarAvatarPerfilSalvo();
-    }
-
-    /**
-     * Restaura o avatar do perfil salvo 
-     * @private
-     */
-    _carregarAvatarPerfilSalvo() {
-        const avatarSalvo = localStorage.getItem('avatar_perfil_thiago_informa');
+        // Carrega avatar do MongoDB (campo avatar do usuário logado)
         const preview = document.getElementById('perfilAvatarPreview');
         const icone = document.getElementById('perfilAvatarIcone');
-        if (avatarSalvo && preview) {
+        if (user.avatar && preview) {
             if (icone) icone.style.display = 'none';
-            preview.style.backgroundImage = `url(${avatarSalvo})`;
+            preview.style.backgroundImage = `url(${user.avatar})`;
             preview.style.backgroundSize = 'cover';
             preview.style.backgroundPosition = 'center';
         } else if (preview) {

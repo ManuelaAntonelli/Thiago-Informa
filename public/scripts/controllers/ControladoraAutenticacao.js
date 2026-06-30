@@ -2,6 +2,8 @@
  * ControladoraAutenticacao (Singleton)
  * Responsabilidade única: gerenciar autenticação, cadastro e perfil de usuários
  * consumindo a API REST do backend Express + MongoDB.
+ *
+ * Sessão gerenciada via cookie HttpOnly — zero localStorage.
  */
 class ControladoraAutenticacao {
 
@@ -10,43 +12,58 @@ class ControladoraAutenticacao {
             return ControladoraAutenticacao.instancia;
         }
 
-        const savedUser = localStorage.getItem('user_thiago_informa');
-        const savedToken = localStorage.getItem('token_thiago_informa');
-
-        if (savedUser && savedToken && savedToken !== "undefined" && savedToken !== "null" && savedToken.trim() !== "") {
-            try {
-                this.usuarioLogado = JSON.parse(savedUser);
-                this.conta_logada = true;
-                this.usuarioLogadoUsername = this.usuarioLogado.usuario;
-            } catch (e) {
-                this.logout();
-            }
-        } else {
-            this.conta_logada = false;
-            this.usuarioLogado = null;
-            this.usuarioLogadoUsername = null;
-            localStorage.removeItem('token_thiago_informa');
-            localStorage.removeItem('user_thiago_informa');
-        }
+        this.conta_logada = false;
+        this.usuarioLogado = null;
+        this.usuarioLogadoUsername = null;
 
         ControladoraAutenticacao.instancia = this;
     }
 
     /**
-     * Retorna os headers padrões com o token de autenticação JWT.
+     * Verifica se existe uma sessão ativa consultando o servidor via cookie.
+     * Deve ser chamado na inicialização da Interface.
+     * @returns {Promise<boolean>}
+     */
+    async verificarSessao() {
+        try {
+            const resposta = await fetch('/api/auth/me', {
+                method: 'GET',
+                credentials: 'same-origin'
+            });
+
+            if (resposta.ok) {
+                const data = await resposta.json();
+                this.conta_logada = true;
+                this.usuarioLogado = data;
+                this.usuarioLogadoUsername = data.usuario;
+                return true;
+            } else {
+                this.conta_logada = false;
+                this.usuarioLogado = null;
+                this.usuarioLogadoUsername = null;
+                return false;
+            }
+        } catch (error) {
+            console.error('Erro ao verificar sessão:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Retorna os headers padrões para requisições autenticadas.
+     * O token é enviado automaticamente via cookie — apenas Content-Type é necessário.
      */
     getAuthHeaders() {
-        const token = localStorage.getItem('token_thiago_informa');
         return {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Content-Type': 'application/json'
         };
     }
 
     /**
      * Verifica as credenciais e executa o login no backend.
+     * O servidor define o cookie HttpOnly com o token JWT.
      * @param {Event} event
-     * @returns {Promise<boolean>} 
+     * @returns {Promise<boolean>}
      */
     async verificaLogin(event) {
         event.preventDefault();
@@ -58,6 +75,7 @@ class ControladoraAutenticacao {
             const resposta = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ usuario: usuarioInput, senha: senhaInput })
             });
 
@@ -71,9 +89,6 @@ class ControladoraAutenticacao {
             this.conta_logada = true;
             this.usuarioLogado = data;
             this.usuarioLogadoUsername = data.usuario;
-
-            localStorage.setItem('token_thiago_informa', data.token);
-            localStorage.setItem('user_thiago_informa', JSON.stringify(data));
 
             return true;
         } catch (error) {
@@ -108,6 +123,7 @@ class ControladoraAutenticacao {
             const resposta = await fetch('/api/auth/register', {
                 method: 'POST',
                 headers: this.getAuthHeaders(),
+                credentials: 'same-origin',
                 body: JSON.stringify({ nome, usuario, senha, perfil: 'Responsável' })
             });
 
@@ -143,6 +159,7 @@ class ControladoraAutenticacao {
 
     /**
      * Salva as alterações do perfil do próprio usuário logado.
+     * O avatar (se alterado) também é salvo no MongoDB.
      */
     async salvarEdicaoUsuario() {
         const novoNome = document.getElementById('editNomeUsuario').value;
@@ -157,6 +174,7 @@ class ControladoraAutenticacao {
             const resposta = await fetch('/api/auth/profile', {
                 method: 'PUT',
                 headers: this.getAuthHeaders(),
+                credentials: 'same-origin',
                 body: JSON.stringify(bodyData)
             });
 
@@ -169,7 +187,6 @@ class ControladoraAutenticacao {
 
             this.usuarioLogado = data;
             this.usuarioLogadoUsername = data.usuario;
-            localStorage.setItem('user_thiago_informa', JSON.stringify(data));
 
             // Atualiza campos na UI
             app.preencherPerfil(data);
@@ -184,7 +201,7 @@ class ControladoraAutenticacao {
 
     /**
      * Exclui a conta do usuário logado.
-     * @param {Function} onLogout 
+     * @param {Function} onLogout
      */
     async excluirConta(onLogout) {
         if (!this.usuarioLogado) return;
@@ -193,7 +210,8 @@ class ControladoraAutenticacao {
             try {
                 const resposta = await fetch(`/api/auth/users/${this.usuarioLogado._id}`, {
                     method: 'DELETE',
-                    headers: this.getAuthHeaders()
+                    headers: this.getAuthHeaders(),
+                    credentials: 'same-origin'
                 });
 
                 if (resposta.ok) {
@@ -211,15 +229,21 @@ class ControladoraAutenticacao {
     }
 
     /**
-     * Realiza o logout
+     * Realiza o logout limpando o cookie via API.
      */
-    logout() {
+    async logout() {
         this.conta_logada = false;
         this.usuarioLogado = null;
         this.usuarioLogadoUsername = null;
 
-        localStorage.removeItem('token_thiago_informa');
-        localStorage.removeItem('user_thiago_informa');
+        try {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
+        } catch (error) {
+            console.error('Erro ao fazer logout no servidor:', error);
+        }
     }
 
     // ======================================
@@ -232,11 +256,10 @@ class ControladoraAutenticacao {
     async obterResponsaveis() {
         console.log("Chamando obterResponsaveis...");
         try {
-            const headers = this.getAuthHeaders();
-            console.log("Headers de autenticação enviados:", headers);
             const resposta = await fetch('/api/auth/responsibles', {
                 method: 'GET',
-                headers: headers
+                headers: this.getAuthHeaders(),
+                credentials: 'same-origin'
             });
 
             console.log("Resposta obtida, status:", resposta.status);
@@ -263,6 +286,7 @@ class ControladoraAutenticacao {
             const resposta = await fetch('/api/auth/register', {
                 method: 'POST',
                 headers: this.getAuthHeaders(),
+                credentials: 'same-origin',
                 body: JSON.stringify({ nome, usuario, senha, perfil })
             });
 
@@ -288,6 +312,7 @@ class ControladoraAutenticacao {
             const resposta = await fetch(`/api/auth/users/${id}/password`, {
                 method: 'PUT',
                 headers: this.getAuthHeaders(),
+                credentials: 'same-origin',
                 body: JSON.stringify({ novaSenha })
             });
 
@@ -312,7 +337,8 @@ class ControladoraAutenticacao {
         try {
             const resposta = await fetch(`/api/auth/users/${id}`, {
                 method: 'DELETE',
-                headers: this.getAuthHeaders()
+                headers: this.getAuthHeaders(),
+                credentials: 'same-origin'
             });
 
             const data = await resposta.json();
