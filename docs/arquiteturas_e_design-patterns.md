@@ -66,3 +66,8 @@ Define uma interface para criar um objeto, encapsulando o processo de instancia�
   * **Fabrica de Modelos (Frontend)**: A classe `Fabrica` gerencia a criação dinâmica de novas instâncias de classes de modelos (`Usuario`, `Projeto`, `Informativo`) no cliente a partir de dados em JSON recebidos das requisições AJAX.
   * [public/scripts/factories/Fabrica.js](file:///c:/Users/andre/Downloads/Thiago-Informa-Web-main/Thiago-Informa-Web-main/public/scripts/factories/Fabrica.js): Concentra a lógica de instanciação em um único ponto, facilitando manutenção e expansões futuras.
 
+### Delegate (Delegação)
+
+A Delegação (Delegation) é um padrão de projeto em que uma classe repassa a execução de uma tarefa para outra classe especializada, em vez de implementar toda a lógica por conta própria.
+
+No código, a classe principal atua como uma coordenadora: ela recebe as ações da interface e as delega para as controladoras responsáveis por cada funcionalidade. Por exemplo, o método executarLogin() chama this.controladoraAuth.verificaLogin(event) para realizar a autenticação, criarProjeto() delega a criação de projetos para ControladoraProjetos, e editarInformativo() encaminha a edição para ControladoraInfo.
