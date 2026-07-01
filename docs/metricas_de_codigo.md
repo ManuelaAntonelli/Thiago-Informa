@@ -112,22 +112,7 @@ Modelos Back    ████                   3,5% —   110 linhas
 
 ---
 
-## 5. Cobertura de Comentários e Documentação
-
-| Arquivo | Linhas Totais | Comentários | Taxa de Comentário |
-|---|---|---|---|
-| ControladoraAutenticacao.js | 358 | 45 | **12,6%** |
-| Interface.js | 1.131 | 145 | **12,8%** |
-| authController.js | 231 | 32 | **13,8%** |
-| informativeController.js | 109 | 15 | **13,8%** |
-| ControladoraInformativo.js | 518 | 35 | **6,8%** |
-| ControladoraProjetos.js | 244 | 18 | **7,4%** |
-
-> **Avaliação geral:** As controladoras e o backend utilizam JSDoc nos métodos principais. A `ControladoraInformativo.js` e `ControladoraProjetos.js` têm taxas menores por conterem grandes blocos de geração de HTML (templates), que naturalmente não são comentados.
-
----
-
-## 6. Inventário de Endpoints da API REST
+## 5. Inventário de Endpoints da API REST
 
 | Método | Rota | Autenticação | Perfil | Função Handler |
 |---|---|---|---|---|
@@ -156,9 +141,9 @@ Modelos Back    ████                   3,5% —   110 linhas
 
 ---
 
-## 7. Inventário de Classes e Métodos
+## 6. Inventário de Classes e Métodos
 
-### 7.1 Backend
+### 6.1 Backend
 
 | Classe / Função | Arquivo | Tipo |
 |---|---|---|
@@ -172,7 +157,7 @@ Modelos Back    ████                   3,5% —   110 linhas
 | `getInformatives`, `createInformative`, `updateInformative`, `togglePinInformative`, `deleteInformative` | backend/controllers/informativeController.js | 5 handlers CRUD |
 | `getEvents`, `createEvent`, `deleteEvent` | backend/controllers/eventController.js | 3 handlers CRUD |
 
-### 7.2 Frontend
+### 6.2 Frontend
 
 | Classe | Arquivo | Padrão | Qtd. Métodos |
 |---|---|---|---|
@@ -196,7 +181,7 @@ Modelos Back    ████                   3,5% —   110 linhas
 
 ---
 
-## 8. Dependências de Produção
+## 7. Dependências de Produção
 
 | Pacote | Versão | Função |
 |---|---|---|
@@ -212,7 +197,7 @@ Modelos Back    ████                   3,5% —   110 linhas
 
 ---
 
-## 9. Observações e Recomendações
+## 8. Observações e Recomendações
 
 ### Pontos Positivos
 
