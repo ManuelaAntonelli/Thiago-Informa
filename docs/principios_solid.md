@@ -37,11 +37,9 @@ Cada arquivo possui agora uma única razão para mudar:
 **`backend/controllers/authController.js`** → *somente* lógica de autenticação de usuários
 
 ```javascript
-// ✅ BOM — AuthController tem responsabilidade única
 class AuthController {
     constructor(UserModel, bcrypt, jwt) { ... }
 
-    // Único motivo de mudança: regras de negócio de autenticação
     async login(req, res) {
         const { usuario, senha } = req.body;
         const user = await this.User.findOne({ usuario });
@@ -59,7 +57,6 @@ class AuthController {
 **`backend/middleware/authMiddleware.js`** → *somente* validação de autenticação HTTP
 
 ```javascript
-// ✅ BOM — Middleware tem responsabilidade única: validar o token
 const protect = async (req, res, next) => {
     const token = req.cookies.token;
     if (!token) return res.status(401).json({ message: 'Sem autorização' });
@@ -72,7 +69,6 @@ const protect = async (req, res, next) => {
 **`backend/config/db.js`** → *somente* gerenciamento da conexão com o banco
 
 ```javascript
-// ✅ BOM — DatabaseConnection tem responsabilidade única: gerenciar a conexão
 class DatabaseConnection {
     constructor() {
         if (!DatabaseConnection.instance) {
@@ -98,7 +94,6 @@ class DatabaseConnection {
 **`public/scripts/services/InformativoService.js`** → *somente* comunicação HTTP
 
 ```javascript
-// ✅ BOM — Service tem responsabilidade única: chamadas HTTP para /api/informatives
 class InformativoService {
     constructor(httpClient) {
         this.http = httpClient;
@@ -115,18 +110,14 @@ class InformativoService {
 **`public/scripts/controllers/ControladoraInformativo.js`** → *somente* orquestração da View
 
 ```javascript
-// ✅ BOM — Controladora tem responsabilidade única: orquestrar o DOM
 class ControladoraInformativo {
     async criarInformativo() {
-        // Lê o DOM (sua única responsabilidade)
         const titulo = document.getElementById('inputTituloInfo').value;
 
-        // Delega a chamada HTTP ao service (não é mais responsabilidade dela)
         const resposta = await this.informativoService.create({ titulo, descricao, imagem });
 
         if (resposta.ok) {
             document.getElementById('formInformativo').reset();
-            // Atualiza o DOM (sua única responsabilidade)
             this.carregarInformativos();
         }
     }
@@ -165,14 +156,9 @@ Um módulo deve ser **extensível** (podemos adicionar novos comportamentos) sem
 A classe `HttpClient` centraliza toda a configuração de requisições HTTP. O método `_buildOptions()` é o **ponto de extensão** — pode ser sobrescrito ou composto sem modificar os services que dependem dele.
 
 ```javascript
-// ✅ HttpClient.js — Fechado para modificação nos services, aberto para extensão
 class HttpClient {
 
     _buildOptions(method, body = null) {
-        // Ponto de extensão central (OCP):
-        // Para adicionar autenticação por Bearer Token, basta
-        // sobrescrever este método em uma subclasse, sem tocar
-        // em nenhum service específico.
         const options = {
             method,
             headers: { 'Content-Type': 'application/json' },
@@ -194,14 +180,12 @@ class HttpClient {
 Se o sistema precisasse mudar para autenticação por Bearer Token (em vez de cookie), **nenhum service** precisaria ser tocado:
 
 ```javascript
-// ✅ Extensão via composição — os services existentes não precisam mudar
 class AuthenticatedHttpClient extends HttpClient {
     constructor(tokenProvider) {
         super();
         this.tokenProvider = tokenProvider;
     }
 
-    // Sobrescreve APENAS o ponto de extensão
     _buildOptions(method, body = null) {
         const options = super._buildOptions(method, body);
         options.headers['Authorization'] = `Bearer ${this.tokenProvider.getToken()}`;
@@ -209,9 +193,6 @@ class AuthenticatedHttpClient extends HttpClient {
     }
 }
 
-// Na Composition Root (Interface.js), troca-se apenas a instância:
-// const httpClient = new AuthenticatedHttpClient(tokenProvider); // ← única mudança
-// Os services e controllers permanecem intactos!
 ```
 
 ---
@@ -221,7 +202,6 @@ class AuthenticatedHttpClient extends HttpClient {
 A arquitetura de services permite adicionar um novo domínio (ex.: `AvisoService`) sem modificar nenhuma classe existente:
 
 ```javascript
-// ✅ Novo service adicionado sem tocar nos existentes
 class AvisoService {
     constructor(httpClient) { this.http = httpClient; }
     async getAll() { return this.http.get('/api/avisos'); }
@@ -232,9 +212,8 @@ class AvisoService {
 Na `Interface.js` (Composition Root), apenas se adiciona a nova linha de composição:
 
 ```javascript
-// Interface.js — apenas esta linha é adicionada; nada mais muda
-const avisoService = new AvisoService(httpClient); // ← nova linha
-this.controladoraAvisos = new ControladoraAvisos(avisoService); // ← nova linha
+const avisoService = new AvisoService(httpClient); 
+this.controladoraAvisos = new ControladoraAvisos(avisoService);
 ```
 
 ---
@@ -255,7 +234,6 @@ Em vez de ter uma interface (ou classe) grande e genérica, devemos criar interf
 Após aplicar o ISP, cada controladora recebe **apenas o service de que necessita**:
 
 ```javascript
-// ✅ AuthService — interface mínima para ControladoraAutenticacao
 class AuthService {
     async login(usuario, senha) { ... }
     async getMe() { ... }
@@ -267,7 +245,6 @@ class AuthService {
     async deleteUser(id) { ... }
 }
 
-// ✅ ProjetoService — interface mínima para ControladoraProjetos
 class ProjetoService {
     async getAll() { ... }
     async create(dados) { ... }
@@ -275,7 +252,6 @@ class ProjetoService {
     async remove(id) { ... }
 }
 
-// ✅ InformativoService — interface mínima para ControladoraInformativo
 class InformativoService {
     async getAll() { ... }
     async create(dados) { ... }
@@ -284,7 +260,6 @@ class InformativoService {
     async remove(id) { ... }
 }
 
-// ✅ EventoService — interface mínima para a seção de Agenda da Interface
 class EventoService {
     async getAll() { ... }
     async create(dados) { ... }
@@ -330,20 +305,17 @@ Classes de alto nível (como controllers de negócio) não devem criar ou import
 
 
 ```javascript
-// ✅ BOM — AuthController recebe dependências via construtor (DIP)
 class AuthController {
     constructor(UserModel, bcrypt, jwt) {
-        this.User = UserModel;   // abstração — qualquer "User" serve
-        this.bcrypt = bcrypt;    // abstração — pode ser substituído por mock em testes
-        this.jwt = jwt;          // abstração — pode ser substituído por mock em testes
+        this.User = UserModel;
+        this.bcrypt = bcrypt;
+        this.jwt = jwt;
     }
 
     async login(req, res) {
-        // Usa this.User (injetado), não User importado diretamente
         const user = await this.User.findOne({ usuario: req.body.usuario });
         if (user && (await this.bcrypt.compare(req.body.senha, user.senha))) {
             const token = this._generateToken(user._id);
-            // ...
         }
     }
 }
@@ -357,31 +329,25 @@ module.exports = AuthController;
 O arquivo de rotas é o **único lugar** onde as dependências concretas são criadas e injetadas:
 
 ```javascript
-// ✅ authRoutes.js — Composition Root do backend
-const AuthController = require('../controllers/authController'); // classe abstrata
-const User = require('../models/User');     // dependência concreta
-const bcrypt = require('bcryptjs');         // dependência concreta
-const jwt = require('jsonwebtoken');        // dependência concreta
+const AuthController = require('../controllers/authController');
+const User = require('../models/User'); 
+const bcrypt = require('bcryptjs');     
+const jwt = require('jsonwebtoken');    
 
-// DIP: injeção das dependências ao instanciar
 const authController = new AuthController(User, bcrypt, jwt);
 
-// Rotas usam os métodos ligados da instância
 router.post('/login', authController.login);
 router.get('/me', protect, authController.getMe);
-// ...
 ```
 
 **Benefício prático:** Para testar `AuthController` em isolamento, basta injetar mocks:
 
 ```javascript
-// Exemplo de teste unitário facilitado pelo DIP
 const UserMock = { findOne: async () => ({ _id: '123', senha: 'hash' }) };
 const bcryptMock = { compare: async () => true };
 const jwtMock = { sign: () => 'fake-token' };
 
 const controller = new AuthController(UserMock, bcryptMock, jwtMock);
-// Agora testamos a lógica sem precisar de banco de dados real!
 ```
 
 ---
@@ -391,23 +357,15 @@ const controller = new AuthController(UserMock, bcryptMock, jwtMock);
 A `Interface.js` é o **único lugar no frontend** onde dependências concretas são instanciadas e conectadas:
 
 ```javascript
-// ✅ Interface.js — Composition Root do frontend (DIP)
 class Interface {
     constructor() {
-        // === COMPOSITION ROOT ===
-        // Único ponto onde dependências concretas são criadas.
-
-        // Nível mais baixo: cliente HTTP concreto
         const httpClient = new HttpClient();
 
-        // Services segregados — dependem da abstração HttpClient
         const authService        = new AuthService(httpClient);
         const informativoService = new InformativoService(httpClient);
         const projetoService     = new ProjetoService(httpClient);
         this.eventoService       = new EventoService(httpClient);
 
-        // Controllers de alto nível — dependem dos services (abstrações)
-        // Não sabem NADA sobre fetch ou URLs de API
         this.controladoraAuth    = new ControladoraAutenticacao(authService);
         this.controladoraInfo    = new ControladoraInformativo(informativoService);
         this.controladoraProjetos = new ControladoraProjetos(projetoService);
@@ -490,5 +448,3 @@ class Interface {
 | Ponto de troca do cliente HTTP | Múltiplos arquivos | **1 linha no Composition Root** |
 
 ---
-
-*Documento gerado com base no código-fonte do projeto Thiago Informa em 30/06/2026.*
