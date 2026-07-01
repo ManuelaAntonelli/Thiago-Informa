@@ -13,9 +13,15 @@ const ProjectSchema = new mongoose.Schema({
         type: String,
         default: 'Todos'
     },
+    // Campo legado (compatibilidade) — mantido para não quebrar dados antigos
     imagem: {
         type: String,
         default: ''
+    },
+    // Novo: array de imagens em base64
+    imagens: {
+        type: [String],
+        default: []
     },
     data_criacao: {
         type: String,

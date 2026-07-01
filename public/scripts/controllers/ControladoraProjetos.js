@@ -3,146 +3,302 @@
  *
  * Princípios SOLID aplicados:
  *  - SRP: Responsabilidade única — orquestrar a UI de projetos (DOM e estado).
- *         Toda comunicação com a API é delegada ao ProjetoService injetado.
  *  - DIP: Recebe projetoService via construtor em vez de instanciar fetch diretamente.
  */
+
+// Cache global de imagens (evita problemas de contexto 'this' em eventos inline)
+window._imgCache = { criar: [], editar: [] };
+
 class ControladoraProjetos {
 
-    /**
-     * @param {ProjetoService} projetoService - Service de projetos injetado (DIP)
-     */
     constructor(projetoService) {
         this.projetoService = projetoService;
         this.listaProjetos = [];
     }
 
+    // ========================
+    // HELPERS DE IMAGEM
+    // ========================
+
     /**
-     * Cria um novo projeto enviando dados para a API.
+     * Converte um File para base64.
+     * @param {File} file
+     * @returns {Promise<string>}
      */
+    _fileParaBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.onerror = () => reject(new Error('Falha ao ler arquivo: ' + file.name));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    /**
+     * Adiciona imagens selecionadas ao cache global e renderiza miniaturas.
+     * Chamado pelo onchange do input[type=file].
+     * @param {HTMLInputElement} input
+     * @param {string} containerId
+     * @param {'criar'|'editar'} modo
+     */
+    async adicionarImagens(input, containerId, modo) {
+        if (!input.files || input.files.length === 0) return;
+
+        const cache = window._imgCache[modo];
+        console.log(`[adicionarImagens] modo=${modo} | arquivos selecionados: ${input.files.length}`);
+
+        for (const file of Array.from(input.files)) {
+            try {
+                const base64 = await this._fileParaBase64(file);
+                cache.push(base64);
+                console.log(`[adicionarImagens] adicionada: ${file.name} (${(base64.length / 1024).toFixed(0)} KB base64)`);
+            } catch (err) {
+                console.error('[adicionarImagens] Erro ao converter arquivo:', err);
+            }
+        }
+
+        // Limpa o input para permitir re-seleção
+        try { input.value = ''; } catch(e) {}
+
+        this._renderizarMiniaturas(containerId, cache, modo);
+        console.log(`[adicionarImagens] cache ${modo} agora tem ${cache.length} imagem(ns)`);
+    }
+
+    /**
+     * Renderiza a grade de miniaturas.
+     * @param {string} containerId
+     * @param {string[]} imagens
+     * @param {'criar'|'editar'} modo
+     */
+    _renderizarMiniaturas(containerId, imagens, modo) {
+        const container = document.getElementById(containerId);
+        if (!container) {
+            console.warn('[_renderizarMiniaturas] container não encontrado:', containerId);
+            return;
+        }
+
+        if (!imagens || imagens.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-3">
+                    <i class="fa-regular fa-image fs-1 mb-2 d-block"></i>
+                    <span class="small">Nenhuma imagem selecionada</span>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = imagens.map((src, i) => `
+            <div class="miniatura-img-wrapper position-relative">
+                <img src="${src}" class="miniatura-img" alt="Imagem ${i + 1}">
+                <button type="button" class="miniatura-remover"
+                    onclick="app.controladoraProjetos.removerImagem(${i}, '${containerId}', '${modo}')"
+                    title="Remover">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        `).join('');
+    }
+
+    /**
+     * Remove uma imagem do cache pelo índice.
+     */
+    removerImagem(index, containerId, modo) {
+        window._imgCache[modo].splice(index, 1);
+        this._renderizarMiniaturas(containerId, window._imgCache[modo], modo);
+    }
+
+    // ========================
+    // CRIAR PROJETO
+    // ========================
+
+    /**
+     * Reseta o estado do modal de criação.
+     * Chamado quando o modal #modalProjeto abre.
+     */
+    resetarModalCriar() {
+        window._imgCache.criar = [];
+        this._renderizarMiniaturas('previewContainerProjetoCriar', [], 'criar');
+        const form = document.getElementById('formProjeto');
+        if (form) form.reset();
+        console.log('[resetarModalCriar] cache criar limpo');
+    }
+
     async criarProjeto() {
         const nome = document.getElementById('inputNomeProjeto').value;
         const desc = document.getElementById('inputDescProjeto').value;
         const turma = document.getElementById('inputTurmaProjeto').value;
-        const inputImagem = document.getElementById('inputImagemProjeto');
 
-        if (nome.trim() === "" || desc.trim() === "") {
-            alert("Preencha o nome e a descrição do projeto!");
+        if (!nome.trim() || !desc.trim()) {
+            alert('Preencha o nome e a descrição do projeto!');
             return;
         }
 
-        const enviarParaAPI = async (imagemBase64) => {
-            try {
-                const resposta = await this.projetoService.create({
-                    nome_projeto: nome, descricao: desc, turma, imagem: imagemBase64
-                });
+        // Lê do cache global
+        const imagensParaEnviar = [...window._imgCache.criar];
+        console.log(`[criarProjeto] Enviando projeto "${nome}" com ${imagensParaEnviar.length} imagem(ns)`);
 
-                if (resposta.ok) {
-                    document.getElementById('formProjeto').reset();
-                    app.removerPreviewImagem('previewContainerProjetoCriar', null);
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('modalProjeto'));
-                    if (modal) modal.hide();
-                    this.exibirProjetos();
-                    if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
-                } else {
-                    const data = await resposta.json();
-                    alert(data.message || "Erro ao criar projeto.");
-                }
-            } catch (error) {
-                console.error(error);
-                alert("Erro de conexão com o servidor.");
+        try {
+            const resposta = await this.projetoService.create({
+                nome_projeto: nome,
+                descricao: desc,
+                turma,
+                imagens: imagensParaEnviar
+            });
+
+            if (!resposta.ok) {
+                const data = await resposta.json();
+                console.error('[criarProjeto] Erro da API:', data);
+                alert(data.message || 'Erro ao criar projeto.');
+                return;
             }
-        };
 
-        if (inputImagem.files && inputImagem.files.length > 0) {
-            const leitor = new FileReader();
-            leitor.onload = function (e) { enviarParaAPI(e.target.result); };
-            leitor.readAsDataURL(inputImagem.files[0]);
-        } else {
-            enviarParaAPI("");
+            const criado = await resposta.json();
+            console.log(`[criarProjeto] ✅ Projeto criado: ${criado.nome_projeto} | imagens salvas: ${criado.imagens?.length ?? 0}`);
+
+            // Limpa estado
+            window._imgCache.criar = [];
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalProjeto'));
+            if (modal) modal.hide();
+
+            this.exibirProjetos();
+            if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
+        } catch (error) {
+            console.error('[criarProjeto] Erro:', error);
+            alert('Erro de conexão com o servidor.');
         }
     }
 
-    /**
-     * Abre o modal de edição preenchido com dados do projeto.
-     * @param {string} id
-     */
+    // ========================
+    // EDITAR PROJETO
+    // ========================
+
     abrirModalEditar(id) {
         const projeto = this.listaProjetos.find(p => p._id === id);
-        if (projeto) {
-            document.getElementById('editIdProjeto').value = projeto._id;
-            document.getElementById('editNomeProjeto').value = projeto.nome_projeto;
-            document.getElementById('editDescProjeto').value = projeto.descricao;
-            document.getElementById('editTurmaProjeto').value = projeto.turma;
-            document.getElementById('editImagemProjetoAtual').value = projeto.imagem;
+        if (!projeto) return;
 
-            const containerPreview = document.getElementById('previewContainerProjetoEditar');
-            if (projeto.imagem && projeto.imagem !== "") {
-                containerPreview.innerHTML = `<img src="${projeto.imagem}" style="width:100%; height:100%; object-fit:cover;">`;
-            } else {
-                containerPreview.innerHTML = `<div class="text-center text-muted"><i class="fa-regular fa-image fs-1"></i></div>`;
-            }
-            new bootstrap.Modal(document.getElementById('modalEditarProjeto')).show();
-        }
+        document.getElementById('editIdProjeto').value = projeto._id;
+        document.getElementById('editNomeProjeto').value = projeto.nome_projeto;
+        document.getElementById('editDescProjeto').value = projeto.descricao;
+        document.getElementById('editTurmaProjeto').value = projeto.turma;
+
+        // Normaliza imagens existentes
+        const existentes = Array.isArray(projeto.imagens) && projeto.imagens.length > 0
+            ? projeto.imagens
+            : (projeto.imagem ? [projeto.imagem] : []);
+
+        window._imgCache.editar = [...existentes];
+        this._renderizarMiniaturas('previewContainerProjetoEditar', window._imgCache.editar, 'editar');
+        console.log(`[abrirModalEditar] projeto "${projeto.nome_projeto}" | imagens existentes: ${existentes.length}`);
+
+        new bootstrap.Modal(document.getElementById('modalEditarProjeto')).show();
     }
 
-    /**
-     * Edita um projeto existente na API.
-     */
     async editarProjeto() {
         const id = document.getElementById('editIdProjeto').value;
         const novoNome = document.getElementById('editNomeProjeto').value;
         const novaDesc = document.getElementById('editDescProjeto').value;
         const novaTurma = document.getElementById('editTurmaProjeto').value;
-        const imagemAtual = document.getElementById('editImagemProjetoAtual').value;
-        const inputNovaImagem = document.getElementById('editNovaImagemProjeto');
 
-        if (novoNome.trim() === "" || novaDesc.trim() === "") {
-            alert("Preencha o nome e a descrição do projeto!");
+        if (!novoNome.trim() || !novaDesc.trim()) {
+            alert('Preencha o nome e a descrição do projeto!');
             return;
         }
 
-        const enviarPUT = async (imagemBase64) => {
-            try {
-                const resposta = await this.projetoService.update(id, {
-                    nome_projeto: novoNome, descricao: novaDesc, turma: novaTurma, imagem: imagemBase64
-                });
+        const imagensParaEnviar = [...window._imgCache.editar];
+        console.log(`[editarProjeto] Atualizando "${novoNome}" com ${imagensParaEnviar.length} imagem(ns)`);
 
-                if (resposta.ok) {
-                    document.getElementById('formEditarProjeto').reset();
-                    bootstrap.Modal.getInstance(document.getElementById('modalEditarProjeto')).hide();
-                    this.exibirProjetos();
-                    if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
-                } else {
-                    const data = await resposta.json();
-                    alert(data.message || "Erro ao atualizar projeto.");
-                }
-            } catch (error) {
-                console.error(error);
-                alert("Erro de conexão com o servidor.");
+        try {
+            const resposta = await this.projetoService.update(id, {
+                nome_projeto: novoNome,
+                descricao: novaDesc,
+                turma: novaTurma,
+                imagens: imagensParaEnviar
+            });
+
+            if (!resposta.ok) {
+                const data = await resposta.json();
+                console.error('[editarProjeto] Erro da API:', data);
+                alert(data.message || 'Erro ao atualizar projeto.');
+                return;
             }
-        };
 
-        if (inputNovaImagem.files && inputNovaImagem.files[0]) {
-            const leitor = new FileReader();
-            leitor.onload = function (e) { enviarPUT(e.target.result); };
-            leitor.readAsDataURL(inputNovaImagem.files[0]);
-        } else {
-            enviarPUT(imagemAtual);
+            const atualizado = await resposta.json();
+            console.log(`[editarProjeto] ✅ Projeto atualizado: ${atualizado.nome_projeto} | imagens: ${atualizado.imagens?.length ?? 0}`);
+
+            window._imgCache.editar = [];
+            bootstrap.Modal.getInstance(document.getElementById('modalEditarProjeto')).hide();
+            this.exibirProjetos();
+            if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
+        } catch (error) {
+            console.error('[editarProjeto] Erro:', error);
+            alert('Erro de conexão com o servidor.');
         }
     }
 
-    /**
-     * Filtra projetos pela turma selecionada.
-     */
+    // ========================
+    // VISUALIZAR PROJETO (CAROUSEL)
+    // ========================
+
+    abrirVisualizarProjeto(id) {
+        const projeto = this.listaProjetos.find(p => p._id === id);
+        if (!projeto) return;
+
+        const imagens = Array.isArray(projeto.imagens) && projeto.imagens.length > 0
+            ? projeto.imagens
+            : (projeto.imagem ? [projeto.imagem] : []);
+
+        document.getElementById('visualizarProjetoNome').textContent = projeto.nome_projeto;
+        document.getElementById('visualizarProjetoTurma').textContent = projeto.turma;
+        document.getElementById('visualizarProjetoDesc').textContent = projeto.descricao;
+        document.getElementById('visualizarProjetoData').textContent = `Criado em: ${projeto.data_criacao}`;
+
+        const carouselInner = document.getElementById('visualizarCarouselInner');
+        const carouselIndicadores = document.getElementById('visualizarCarouselIndicadores');
+        const semImagem = document.getElementById('visualizarSemImagem');
+        const carouselEl = document.getElementById('visualizarCarousel');
+
+        if (imagens.length === 0) {
+            carouselEl.classList.add('d-none');
+            semImagem.classList.remove('d-none');
+            const isAdmin = typeof app !== 'undefined' && app.controladoraAuth && app.controladoraAuth.verificarAdm
+                ? app.controladoraAuth.verificarAdm()
+                : false;
+            semImagem.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="fa-regular fa-image fs-1 mb-2 d-block"></i>
+                    <span class="small d-block">Sem imagens cadastradas</span>
+                    ${isAdmin ? `<small class="text-primary mt-1 d-block">Clique em ✏️ no card para adicionar imagens</small>` : ''}
+                </div>`;
+        } else {
+            semImagem.classList.add('d-none');
+            carouselEl.classList.remove('d-none');
+
+            carouselInner.innerHTML = imagens.map((src, i) => `
+                <div class="carousel-item ${i === 0 ? 'active' : ''}">
+                    <img src="${src}" class="d-block w-100 carousel-projeto-img" alt="Imagem ${i + 1}">
+                </div>
+            `).join('');
+
+            carouselIndicadores.innerHTML = imagens.length > 1
+                ? imagens.map((_, i) => `
+                    <button type="button" data-bs-target="#visualizarCarousel" data-bs-slide-to="${i}"
+                        class="${i === 0 ? 'active' : ''}" aria-label="Slide ${i + 1}"></button>
+                `).join('')
+                : '';
+        }
+
+        new bootstrap.Modal(document.getElementById('modalVisualizarProjeto')).show();
+    }
+
+    // ========================
+    // LISTAGEM E FILTRO
+    // ========================
+
     filtrarProjetos(turmaSelecionada) {
         const label = document.getElementById('label-filtro-turma');
         if (label) label.innerText = turmaSelecionada;
         this.exibirProjetos(turmaSelecionada);
     }
 
-    /**
-     * Renderiza a lista de projetos na tela a partir do backend.
-     */
     async exibirProjetos(filtroTurma = 'Todos') {
         const container = document.getElementById('lista-projetos');
         if (!container) return;
@@ -159,12 +315,11 @@ class ControladoraProjetos {
             const data = await resposta.json();
             this.listaProjetos = data;
 
-            let listaFiltrada = data;
-            if (filtroTurma !== 'Todos') {
-                listaFiltrada = data.filter(proj => proj.turma === filtroTurma);
-            }
+            const listaFiltrada = filtroTurma === 'Todos'
+                ? data
+                : data.filter(proj => proj.turma === filtroTurma);
 
-            container.innerHTML = "";
+            container.innerHTML = '';
 
             if (listaFiltrada.length === 0) {
                 container.innerHTML = "<p class='text-center text-muted w-100 my-4'>Nenhum projeto encontrado.</p>";
@@ -172,19 +327,41 @@ class ControladoraProjetos {
             }
 
             listaFiltrada.slice().reverse().forEach(proj => {
-                const miniatura = proj.imagem && proj.imagem !== ""
-                    ? `<img src="${proj.imagem}" class="img-fluid rounded" style="width: 100%; height: 100%; object-fit: cover;">`
+                const primeiraImagem = Array.isArray(proj.imagens) && proj.imagens.length > 0
+                    ? proj.imagens[0]
+                    : proj.imagem;
+
+                const miniatura = primeiraImagem && primeiraImagem !== ''
+                    ? `<img src="${primeiraImagem}" class="img-fluid rounded" style="width: 100%; height: 100%; object-fit: cover;">`
                     : `<i class="fa-regular fa-folder-open text-muted fs-4"></i>`;
+
+                const qtdImagens = Array.isArray(proj.imagens) && proj.imagens.length > 0
+                    ? proj.imagens.length
+                    : (proj.imagem ? 1 : 0);
+
+                const badgeImagens = qtdImagens > 1
+                    ? `<span class="badge-imagens-count"><i class="fa-solid fa-images me-1"></i>${qtdImagens}</span>`
+                    : '';
 
                 container.innerHTML += `
                     <div class="col-12 col-md-6">
-                        <div class="card card-feed p-2 d-flex flex-row align-items-center gap-3 position-relative pe-5 bg-white">
+                        <div class="card card-feed p-2 d-flex flex-row align-items-center gap-3 position-relative pe-5 bg-white"
+                             style="cursor: pointer;"
+                             onclick="app.controladoraProjetos.abrirVisualizarProjeto('${proj._id}')">
                             <div class="position-absolute top-0 end-0 h-100 d-flex flex-column justify-content-center pe-2 gap-2 apenas-admin">
-                                <button class="btn btn-sm btn-outline-warning rounded-circle" onclick="app.abrirModalEditar('${proj._id}')"><i class="fa-solid fa-pen"></i></button>
-                                <button class="btn btn-sm btn-outline-danger rounded-circle" onclick="app.excluirProjeto('${proj._id}')"><i class="fa-solid fa-trash"></i></button>
+                                <button class="btn btn-sm btn-outline-warning rounded-circle"
+                                    onclick="event.stopPropagation(); app.abrirModalEditar('${proj._id}')">
+                                    <i class="fa-solid fa-pen"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger rounded-circle"
+                                    onclick="event.stopPropagation(); app.excluirProjeto('${proj._id}')">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
                             </div>
-                            <div class="bg-light border rounded d-flex justify-content-center align-items-center" style="width: 80px; height: 70px; overflow: hidden; flex-shrink: 0;">
+                            <div class="bg-light border rounded d-flex justify-content-center align-items-center position-relative"
+                                 style="width: 80px; height: 70px; overflow: hidden; flex-shrink: 0;">
                                 ${miniatura}
+                                ${badgeImagens}
                             </div>
                             <div class="flex-grow-1 text-truncate">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
@@ -198,30 +375,32 @@ class ControladoraProjetos {
                     </div>`;
             });
         } catch (error) {
-            console.error(error);
+            console.error('[exibirProjetos] Erro:', error);
             container.innerHTML = "<p class='text-center text-danger'>Erro ao conectar com o servidor.</p>";
         }
     }
 
-    /**
-     * Exclui um projeto no backend.
-     * @param {string} id
-     */
+    // ========================
+    // EXCLUIR PROJETO
+    // ========================
+
     async excluirProjeto(id) {
-        if (confirm("Tem certeza que deseja excluir este projeto?")) {
-            try {
-                const resposta = await this.projetoService.remove(id);
-                if (resposta.ok) {
-                    this.exibirProjetos();
-                    if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
-                } else {
-                    const data = await resposta.json();
-                    alert(data.message || "Erro ao excluir projeto.");
-                }
-            } catch (error) {
-                console.error(error);
-                alert("Erro de conexão com o servidor.");
+        if (!confirm('Tem certeza que deseja excluir este projeto?')) return;
+
+        try {
+            const resposta = await this.projetoService.remove(id);
+
+            if (!resposta.ok) {
+                const data = await resposta.json();
+                alert(data.message || 'Erro ao excluir projeto.');
+                return;
             }
+
+            this.exibirProjetos();
+            if (typeof app.adminCarregarProjetos === 'function') app.adminCarregarProjetos();
+        } catch (error) {
+            console.error('[excluirProjeto] Erro:', error);
+            alert('Erro de conexão com o servidor.');
         }
     }
 }

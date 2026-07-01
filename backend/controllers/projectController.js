@@ -35,12 +35,25 @@ class ProjectController {
     // @route   POST /api/projects
     // @access  Private (Admin only)
     async createProject(req, res) {
-        const { nome_projeto, descricao, turma, imagem } = req.body;
+        const { nome_projeto, descricao, turma, imagem, imagens } = req.body;
         try {
             if (!nome_projeto || !descricao) {
                 return res.status(400).json({ message: 'Nome e descrição são obrigatórios' });
             }
-            const project = new this.Project({ nome_projeto, descricao, turma: turma || 'Todos', imagem: imagem || '' });
+
+            // Normaliza imagens: usa o array se fornecido, caso contrário usa o campo legado
+            const imagensArray = Array.isArray(imagens) && imagens.length > 0
+                ? imagens
+                : (imagem ? [imagem] : []);
+
+            const project = new this.Project({
+                nome_projeto,
+                descricao,
+                turma: turma || 'Todos',
+                imagem: imagensArray[0] || '',
+                imagens: imagensArray
+            });
+
             const createdProject = await project.save();
             res.status(201).json(createdProject);
         } catch (error) {
@@ -52,19 +65,29 @@ class ProjectController {
     // @route   PUT /api/projects/:id
     // @access  Private (Admin only)
     async updateProject(req, res) {
-        const { nome_projeto, descricao, turma, imagem } = req.body;
+        const { nome_projeto, descricao, turma, imagem, imagens } = req.body;
         try {
             const project = await this.Project.findById(req.params.id);
-            if (project) {
-                project.nome_projeto = nome_projeto || project.nome_projeto;
-                project.descricao = descricao || project.descricao;
-                project.turma = turma || project.turma;
-                if (imagem !== undefined) project.imagem = imagem;
-                const updatedProject = await project.save();
-                res.json(updatedProject);
-            } else {
-                res.status(404).json({ message: 'Projeto não encontrado' });
+
+            if (!project) {
+                return res.status(404).json({ message: 'Projeto não encontrado' });
             }
+
+            project.nome_projeto = nome_projeto || project.nome_projeto;
+            project.descricao = descricao || project.descricao;
+            project.turma = turma || project.turma;
+
+            // Atualiza imagens se fornecido
+            if (Array.isArray(imagens)) {
+                project.imagens = imagens;
+                project.imagem = imagens[0] || '';
+            } else if (imagem !== undefined) {
+                project.imagem = imagem;
+                project.imagens = imagem ? [imagem] : [];
+            }
+
+            const updatedProject = await project.save();
+            res.json(updatedProject);
         } catch (error) {
             res.status(500).json({ message: 'Erro ao atualizar projeto', error: error.message });
         }
@@ -76,12 +99,13 @@ class ProjectController {
     async deleteProject(req, res) {
         try {
             const project = await this.Project.findById(req.params.id);
-            if (project) {
-                await this.Project.deleteOne({ _id: project._id });
-                res.json({ message: 'Projeto removido com sucesso' });
-            } else {
-                res.status(404).json({ message: 'Projeto não encontrado' });
+
+            if (!project) {
+                return res.status(404).json({ message: 'Projeto não encontrado' });
             }
+
+            await this.Project.deleteOne({ _id: project._id });
+            res.json({ message: 'Projeto removido com sucesso' });
         } catch (error) {
             res.status(500).json({ message: 'Erro ao deletar projeto', error: error.message });
         }

@@ -176,12 +176,7 @@ class Interface {
 
 
 
-    /**
-     * Cria um novo usuário do tipo Responsável.
-     */
-    criarResponsavel() {
-        this.controladoraAuth.criarResponsavel();
-    }
+
 
     /**
      * Abre o modal de edição de usuário.
@@ -220,6 +215,14 @@ class Interface {
     // ========================
     // PROJETOS (delegação)
     // ========================
+
+    /**
+     * Abre o modal de novo projeto, resetando o cache de imagens antes.
+     */
+    abrirModalNovoProjeto() {
+        this.controladoraProjetos.resetarModalCriar();
+        new bootstrap.Modal(document.getElementById('modalProjeto')).show();
+    }
 
     /**
      * Cria um novo projeto.
@@ -474,20 +477,16 @@ class Interface {
         }
 
         if (abaNome === 'agenda') {
-            this.renderizarCalendario();
-            this.carregarFeriados();
-            
-            // Pega o dia ativo ou hoje
-            const inputData = document.getElementById('inputDataAgenda');
-            let dataFormatada = inputData ? inputData.value : "";
-            if (!dataFormatada) {
-                const hoje = new Date();
-                const diaPadded = String(hoje.getDate()).padStart(2, '0');
-                const mesPadded = String(hoje.getMonth() + 1).padStart(2, '0');
-                dataFormatada = `${diaPadded}/${mesPadded}/${hoje.getFullYear()}`;
-                if (inputData) inputData.value = dataFormatada;
+            // Define o dia ativo: mantém o selecionado ou usa hoje
+            if (!this._dataAtivaSelecionada) {
+                this._dataAtivaSelecionada = new Date().toISOString().split('T')[0];
             }
-            this.exibirEventosDia(dataFormatada);
+            const inputData = document.getElementById('inputDataAgenda');
+            if (inputData) inputData.value = this._isoParaBr(this._dataAtivaSelecionada);
+
+            this.renderizarCalendario(); // já carrega feriados e eventos para o grid
+            // carregarFeriados removido (seção de lista removida do HTML)
+            this.exibirEventosDia(this._dataAtivaSelecionada);
         }
 
         if (abaNome === 'perfil') {
@@ -587,14 +586,14 @@ class Interface {
     }
 
     async adminExcluirResponsavel(id) {
-        if (confirm("Deseja realmente excluir este responsável? Ele perderá acesso ao sistema.")) {
-            try {
-                await this.controladoraAuth.excluirResponsavel(id);
-                alert("Responsável excluído.");
-                this.adminCarregarResponsaveis();
-            } catch (error) {
-                alert(error.message || "Erro ao excluir responsável.");
-            }
+        if (!confirm("Deseja realmente excluir este responsável? Ele perderá acesso ao sistema.")) return;
+        
+        try {
+            await this.controladoraAuth.excluirResponsavel(id);
+            alert("Responsável excluído.");
+            this.adminCarregarResponsaveis();
+        } catch (error) {
+            alert(error.message || "Erro ao excluir responsável.");
         }
     }
 
@@ -611,34 +610,49 @@ class Interface {
     // ========================
 
     /**
+     * Converte uma data no formato ISO (yyyy-mm-dd) para DD/MM/AAAA.
+     * @param {string} iso
+     * @returns {string}
+     */
+    _isoParaBr(iso) {
+        const [a, m, d] = iso.split('-');
+        return `${d}/${m}/${a}`;
+    }
+
+    /**
+     * Converte uma data no formato DD/MM/AAAA para ISO (yyyy-mm-dd).
+     * @param {string} br
+     * @returns {string}
+     */
+    _brParaIso(br) {
+        const [d, m, a] = br.split('/');
+        return `${a}-${m}-${d}`;
+    }
+
+    /**
      * Seleciona um dia no calendário.
      * @param {HTMLElement} elementoClicado
+     * @param {string} isoDate - data no formato yyyy-mm-dd
      */
-    selecionarDia(elementoClicado) {
+    selecionarDia(elementoClicado, isoDate) {
         const todosOsDias = document.querySelectorAll('.dia-data');
         todosOsDias.forEach(dia => dia.classList.remove('ativo'));
         elementoClicado.classList.add('ativo');
 
-        const diaText = elementoClicado.textContent.trim();
-        const mes = this.dataAtualCalendario.getMonth();
-        const ano = this.dataAtualCalendario.getFullYear();
-
-        const diaPadded = String(diaText).padStart(2, '0');
-        const mesPadded = String(mes + 1).padStart(2, '0');
-        const dataFormatada = `${diaPadded}/${mesPadded}/${ano}`;
+        this._dataAtivaSelecionada = isoDate;
 
         const inputData = document.getElementById('inputDataAgenda');
         if (inputData) {
-            inputData.value = dataFormatada;
+            inputData.value = this._isoParaBr(isoDate);
         }
 
-        this.exibirEventosDia(dataFormatada);
+        this.exibirEventosDia(isoDate);
     }
 
     /**
-     * Renderiza o calendário mensal.
+     * Renderiza o calendário mensal com pontos indicando eventos e feriados.
      */
-    renderizarCalendario() {
+    async renderizarCalendario() {
         const grid = document.getElementById('grid-dias');
         const displayMes = document.getElementById('display-mes');
         const displayAno = document.getElementById('display-ano');
@@ -648,6 +662,33 @@ class Interface {
 
         displayMes.innerHTML = `${this.mesesNomes[mes]} <i class="fa-solid fa-caret-down ms-1" style="font-size: 0.7rem;"></i>`;
         displayAno.innerHTML = `${ano} <i class="fa-solid fa-caret-down ms-1" style="font-size: 0.7rem;"></i>`;
+
+        // Busca em paralelo: eventos do MongoDB + feriados da API
+        let eventosDates = new Set();
+        let feriadosDates = new Map(); // 'yyyy-mm-dd' -> nome do feriado
+
+        try {
+            const [resEventos, feriados] = await Promise.all([
+                this.eventoService.getAll(),
+                this._obterFeriadosCache(ano)
+            ]);
+
+            if (resEventos.ok) {
+                const eventos = await resEventos.json();
+                eventos.forEach(ev => {
+                    // eventos salvos como DD/MM/AAAA → converte para ISO para comparar
+                    if (ev.data && ev.data.includes('/')) {
+                        eventosDates.add(this._brParaIso(ev.data));
+                    } else if (ev.data) {
+                        eventosDates.add(ev.data);
+                    }
+                });
+            }
+
+            feriados.forEach(f => feriadosDates.set(f.date, f.name));
+        } catch (e) {
+            console.warn('Erro ao carregar marcadores do calendário:', e);
+        }
 
         let htmlDias = `
             <div class="dia-semana">D</div><div class="dia-semana">S</div><div class="dia-semana">T</div>
@@ -665,11 +706,25 @@ class Interface {
 
         const hoje = new Date();
         for (let i = 1; i <= ultimoDiaDoMes; i++) {
-            let classeAtivo = '';
-            if (i === hoje.getDate() && mes === hoje.getMonth() && ano === hoje.getFullYear()) {
-                classeAtivo = 'ativo';
-            }
-            htmlDias += `<div class="dia-data ${classeAtivo}" onclick="app.selecionarDia(this)">${i}</div>`;
+            const mesPadded = String(mes + 1).padStart(2, '0');
+            const diaPadded = String(i).padStart(2, '0');
+            const isoDate = `${ano}-${mesPadded}-${diaPadded}`;
+
+            const isHoje = (i === hoje.getDate() && mes === hoje.getMonth() && ano === hoje.getFullYear());
+            const classeAtivo = isHoje ? 'ativo' : '';
+            const temEvento = eventosDates.has(isoDate);
+            const temFeriado = feriadosDates.has(isoDate);
+            const nomeFeriado = feriadosDates.get(isoDate) || '';
+
+            const tooltip = nomeFeriado ? ` title="${nomeFeriado}"` : '';
+
+            const pontos = (temEvento || temFeriado) ? `
+                <span class="dia-pontos">
+                    ${temEvento ? '<span class="dia-ponto dia-ponto--evento"></span>' : ''}
+                    ${temFeriado ? '<span class="dia-ponto dia-ponto--feriado"></span>' : ''}
+                </span>` : '';
+
+            htmlDias += `<div class="dia-data ${classeAtivo}" onclick="app.selecionarDia(this, '${isoDate}')"${tooltip}>${i}${pontos}</div>`;
         }
 
         const diasUsados = primeiroDiaDoMes + ultimoDiaDoMes;
@@ -679,6 +734,34 @@ class Interface {
         }
 
         grid.innerHTML = htmlDias;
+
+        // Se já havia um dia selecionado, re-seleciona
+        if (this._dataAtivaSelecionada) {
+            const diaEl = grid.querySelector(`[onclick*="${this._dataAtivaSelecionada}"]`);
+            if (diaEl) {
+                diaEl.classList.add('ativo');
+            }
+        }
+    }
+
+    /**
+     * Obtém feriados do cache ou da API.
+     * @param {number} ano
+     * @returns {Promise<Array>}
+     */
+    async _obterFeriadosCache(ano) {
+        if (!this._feriadosCache) this._feriadosCache = {};
+        if (this._feriadosCache[ano]) return this._feriadosCache[ano];
+
+        try {
+            const resposta = await fetch(`https://brasilapi.com.br/api/feriados/v1/${ano}`);
+            const feriados = await resposta.json();
+            this._feriadosCache[ano] = Array.isArray(feriados) ? feriados : [];
+        } catch (e) {
+            console.warn('Brasil API indisponível:', e);
+            this._feriadosCache[ano] = [];
+        }
+        return this._feriadosCache[ano];
     }
 
     /**
@@ -700,32 +783,46 @@ class Interface {
     }
 
     /**
-     * Carrega os feriados nacionais da API Brasil.
+     * Carrega os feriados nacionais da API Brasil e renderiza na seção da agenda.
+     * Utiliza cache para evitar chamadas repetidas.
      */
     async carregarFeriados() {
         const container = document.getElementById('lista-feriados');
         const loader = document.getElementById('loader-api');
 
         try {
-            const resposta = await fetch('https://brasilapi.com.br/api/feriados/v1/2026');
-            const feriados = await resposta.json();
+            const ano = new Date().getFullYear();
+            const feriados = await this._obterFeriadosCache(ano);
 
             if (loader) loader.remove();
-
             container.innerHTML = "";
 
-            const primeirosFeriados = feriados.slice(0, 4);
+            if (!feriados || feriados.length === 0) {
+                container.innerHTML = `<div class="col-12 text-center text-muted small">Nenhum feriado encontrado para ${ano}.</div>`;
+                return;
+            }
 
-            primeirosFeriados.forEach(feriado => {
+            // Mostra apenas os próximos 6 feriados a partir de hoje
+            const hoje = new Date();
+            const proximos = feriados
+                .filter(f => new Date(f.date + 'T00:00:00') >= hoje)
+                .slice(0, 6);
+
+            const lista = proximos.length > 0 ? proximos : feriados.slice(0, 6);
+
+            lista.forEach(feriado => {
                 const dataPartes = feriado.date.split('-');
                 const dataFormatada = `${dataPartes[2]}/${dataPartes[1]}/${dataPartes[0]}`;
+                const meses = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+                const nomeMes = meses[parseInt(dataPartes[1]) - 1];
 
                 container.innerHTML += `
                     <div class="col-12 col-md-6">
-                        <div class="card card-feed p-2 d-flex flex-row align-items-center gap-3 border-primary" style="border-width: 2px;">
+                        <div class="card card-feed p-2 d-flex flex-row align-items-center gap-3 border-primary" style="border-width: 2px; cursor:pointer;"
+                             onclick="app.selecionarDiaFeriado('${feriado.date}')" title="Ver ${feriado.date} no calendário">
                             <div class="bg-light border border-primary rounded p-3 text-center text-primary" style="width: 80px; height: 70px;">
                                 <span class="fw-bold fs-5">${dataPartes[2]}</span>
-                                <span class="d-block" style="font-size: 0.6rem;">${dataPartes[1]}</span>
+                                <span class="d-block" style="font-size: 0.6rem;">${nomeMes}</span>
                             </div>
                             <div class="flex-grow-1">
                                 <span class="fw-bold small d-block text-primary">${feriado.name}</span>
@@ -744,50 +841,73 @@ class Interface {
     }
 
     /**
+     * Navega o calendário até o mês do feriado e marca o dia.
+     * @param {string} isoDate - formato yyyy-mm-dd
+     */
+    selecionarDiaFeriado(isoDate) {
+        const [ano, mes] = isoDate.split('-').map(Number);
+        this.dataAtualCalendario = new Date(ano, mes - 1, 1);
+        this.renderizarCalendario().then(() => {
+            const grid = document.getElementById('grid-dias');
+            const diaEl = grid.querySelector(`[onclick*="${isoDate}"]`);
+            if (diaEl) {
+                diaEl.classList.add('ativo');
+                this._dataAtivaSelecionada = isoDate;
+                document.getElementById('inputDataAgenda').value = this._isoParaBr(isoDate);
+                this.exibirEventosDia(isoDate);
+                // Rola até o calendário
+                document.getElementById('aba-agenda').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    }
+
+    /**
      * Abre o modal de cadastro de eventos na agenda, preenchendo a data selecionada.
      */
     agendaAbrirModalAdicionar() {
-        const inputData = document.getElementById('inputDataAgenda');
-        const activeDate = inputData ? inputData.value : "";
-        
-        document.getElementById('agendaModalData').value = activeDate;
+        const iso = this._dataAtivaSelecionada || new Date().toISOString().split('T')[0];
+        document.getElementById('agendaModalData').value = iso;
         document.getElementById('agendaModalTitulo').value = "";
         document.getElementById('agendaModalDesc').value = "";
-        
         new bootstrap.Modal(document.getElementById('modalAgenda')).show();
     }
 
     /**
      * Cria um novo evento no backend.
+     * O campo de data do modal agora é ISO (yyyy-mm-dd); converte para DD/MM/AAAA antes de salvar.
      */
     async criarEventoAgenda(event) {
         event.preventDefault();
-        
-        const data = document.getElementById('agendaModalData').value;
+
+        const isoDate = document.getElementById('agendaModalData').value;
         const titulo = document.getElementById('agendaModalTitulo').value;
         const descricao = document.getElementById('agendaModalDesc').value;
-        
+
+        // Converte para DD/MM/AAAA (formato armazenado no MongoDB)
+        const data = this._isoParaBr(isoDate);
+
         try {
             const resposta = await this.eventoService.create({ titulo, descricao, data });
-            
             const resData = await resposta.json();
-            
+
             if (!resposta.ok) {
-                if (resposta.status === 401) {
-                    this.logout();
-                    return;
-                }
+                if (resposta.status === 401) { this.logout(); return; }
                 throw new Error(resData.message || "Erro ao criar evento.");
             }
-            
-            // Fecha modal e reseta formulário
+
             bootstrap.Modal.getInstance(document.getElementById('modalAgenda')).hide();
             document.getElementById('formAgenda').reset();
-            
+
             alert("Evento agendado com sucesso!");
-            
-            // Recarrega eventos do dia
-            this.exibirEventosDia(data);
+
+            // Atualiza o calendário e os eventos do dia
+            await this.renderizarCalendario();
+            this.exibirEventosDia(isoDate);
+
+            // Atualiza painel admin se estiver aberto
+            if (typeof this.adminCarregarEventos === 'function') {
+                this.adminCarregarEventos();
+            }
         } catch (error) {
             console.error(error);
             alert(error.message || "Erro ao agendar compromisso.");
@@ -796,25 +916,24 @@ class Interface {
 
     /**
      * Exclui um evento da agenda no backend.
+     * @param {string} id
+     * @param {string} isoDate - formato yyyy-mm-dd
      */
-    async excluirEventoAgenda(id, dataStr) {
+    async excluirEventoAgenda(id, isoDate) {
         if (!confirm("Deseja realmente remover este compromisso da agenda?")) return;
-        
+
         try {
             const resposta = await this.eventoService.remove(id);
-            
             const resData = await resposta.json();
-            
+
             if (!resposta.ok) {
-                if (resposta.status === 401) {
-                    this.logout();
-                    return;
-                }
+                if (resposta.status === 401) { this.logout(); return; }
                 throw new Error(resData.message || "Erro ao excluir evento.");
             }
-            
+
             alert("Compromisso removido da agenda.");
-            this.exibirEventosDia(dataStr);
+            await this.renderizarCalendario();
+            this.exibirEventosDia(isoDate);
         } catch (error) {
             console.error(error);
             alert(error.message || "Erro ao remover compromisso.");
@@ -823,47 +942,64 @@ class Interface {
 
     /**
      * Busca os eventos do dia e renderiza na tela.
+     * @param {string} isoDate - formato yyyy-mm-dd
      */
-    async exibirEventosDia(dataFormatada) {
+    async exibirEventosDia(isoDate) {
         const container = document.getElementById('lista-eventos-container');
         const tituloDia = document.getElementById('agenda-dia-titulo');
         if (!container) return;
-        
-        if (tituloDia) {
-            tituloDia.textContent = dataFormatada;
-        }
-        
+
+        const dataBr = this._isoParaBr(isoDate);
+        if (tituloDia) tituloDia.textContent = dataBr;
+
         container.innerHTML = `<div class="col-12 text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div> Carregando compromissos...</div>`;
-        
+
         try {
-            const resposta = await this.eventoService.getAll();
-            
-            if (!resposta.ok) {
-                if (resposta.status === 401) {
-                    this.logout();
-                    return;
-                }
+            const [resEventos, feriados] = await Promise.all([
+                this.eventoService.getAll(),
+                this._obterFeriadosCache(parseInt(isoDate.split('-')[0]))
+            ]);
+
+            if (!resEventos.ok) {
+                if (resEventos.status === 401) { this.logout(); return; }
                 container.innerHTML = `<div class="col-12 text-center text-danger">Erro ao carregar compromissos.</div>`;
                 return;
             }
-            
-            const eventos = await resposta.json();
-            
-            // Filtra os eventos da data selecionada
-            const eventosDia = eventos.filter(ev => ev.data === dataFormatada);
-            
+
+            const eventos = await resEventos.json();
+            // Eventos armazenados como DD/MM/AAAA
+            const eventosDia = eventos.filter(ev => ev.data === dataBr);
+
+            // Verifica feriado
+            const feriado = feriados.find(f => f.date === isoDate);
+
             container.innerHTML = "";
-            
-            if (eventosDia.length === 0) {
+
+            // Card de feriado nacional (se houver)
+            if (feriado) {
+                container.innerHTML += `
+                    <div class="col-12">
+                        <div class="card p-3 border-primary border-2 d-flex flex-row align-items-center gap-3">
+                            <i class="fa-solid fa-flag text-primary fs-4"></i>
+                            <div>
+                                <span class="fw-bold small d-block text-primary">Feriado Nacional</span>
+                                <p class="mb-0 text-muted small">${feriado.name}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (eventosDia.length === 0 && !feriado) {
                 container.innerHTML = `<div class="col-12 text-center text-muted py-3">Nenhum compromisso agendado para este dia.</div>`;
                 return;
             }
-            
+
             eventosDia.forEach(ev => {
-                const deleteBtn = this.controladoraAuth.verificarAdm() 
-                    ? `<button class="btn btn-sm btn-outline-danger border-0 position-absolute top-0 end-0 m-2 apenas-admin" onclick="app.excluirEventoAgenda('${ev._id}', '${dataFormatada}')" title="Excluir"><i class="fa-solid fa-trash"></i></button>`
+                const deleteBtn = this.controladoraAuth.verificarAdm()
+                    ? `<button class="btn btn-sm btn-outline-danger border-0 position-absolute top-0 end-0 m-2" onclick="app.excluirEventoAgenda('${ev._id}', '${isoDate}')" title="Excluir"><i class="fa-solid fa-trash"></i></button>`
                     : ``;
-                    
+
                 container.innerHTML += `
                     <div class="col-12">
                         <div class="card card-fixado p-3 border-2 position-relative">
@@ -945,30 +1081,42 @@ class Interface {
 
     async adminAlternarFixado(id) {
         try {
-            await this.controladoraInfo.alternarFixado(id);
+            const resposta = await this.controladoraInfo.informativoService.togglePin(id);
+            
+            if (!resposta.ok) {
+                const data = await resposta.json();
+                alert(data.message || 'Erro ao alternar fixação.');
+                return;
+            }
+            
+            this.controladoraInfo.carregarInformativos();
+            this.controladoraInfo.carregarFixados();
             this.adminCarregarInformativos();
         } catch (error) {
             console.error(error);
+            alert('Erro de conexão.');
         }
     }
 
     async adminExcluirInfo(id) {
-        if (confirm("Deseja realmente excluir este informativo permanentemente?")) {
-            try {
-                const resposta = await this.controladoraInfo.informativoService.remove(id);
-                if (resposta.ok) {
-                    alert("Informativo excluído.");
-                    this.controladoraInfo.carregarInformativos();
-                    this.controladoraInfo.carregarFixados();
-                    this.adminCarregarInformativos();
-                } else {
-                    const data = await resposta.json();
-                    alert(data.message || "Erro ao excluir informativo.");
-                }
-            } catch (error) {
-                console.error(error);
-                alert("Erro de conexão.");
+        if (!confirm("Deseja realmente excluir este informativo permanentemente?")) return;
+        
+        try {
+            const resposta = await this.controladoraInfo.informativoService.remove(id);
+            
+            if (!resposta.ok) {
+                const data = await resposta.json();
+                alert(data.message || "Erro ao excluir informativo.");
+                return;
             }
+            
+            alert("Informativo excluído.");
+            this.controladoraInfo.carregarInformativos();
+            this.controladoraInfo.carregarFixados();
+            this.adminCarregarInformativos();
+        } catch (error) {
+            console.error(error);
+            alert("Erro de conexão.");
         }
     }
 
@@ -1009,11 +1157,11 @@ class Interface {
                 container.innerHTML += `
                     <tr>
                         <td>${capa}</td>
-                        <td class="text-truncate" style="max-width: 250px;"><strong>${proj.titulo}</strong></td>
+                        <td class="text-truncate" style="max-width: 250px;"><strong>${proj.nome_projeto}</strong></td>
                         <td><span class="badge bg-warning text-dark">${proj.turma}</span></td>
                         <td>
                             <div class="d-flex gap-2">
-                                <button class="btn btn-sm btn-outline-warning text-dark fw-bold" onclick="app.exibirEdicaoProjeto('${proj._id}')">
+                                <button class="btn btn-sm btn-outline-warning text-dark fw-bold" onclick="app.abrirModalEditar('${proj._id}')">
                                     <i class="fa-solid fa-pen-to-square"></i>
                                 </button>
                                 <button class="btn btn-sm btn-outline-danger" onclick="app.adminExcluirProjeto('${proj._id}')">
@@ -1031,21 +1179,23 @@ class Interface {
     }
 
     async adminExcluirProjeto(id) {
-        if (confirm("Deseja realmente excluir este projeto permanentemente?")) {
-            try {
-                const resposta = await this.controladoraProjetos.projetoService.remove(id);
-                if (resposta.ok) {
-                    alert("Projeto excluído.");
-                    this.controladoraProjetos.exibirProjetos();
-                    this.adminCarregarProjetos();
-                } else {
-                    const data = await resposta.json();
-                    alert(data.message || "Erro ao excluir projeto.");
-                }
-            } catch (error) {
-                console.error(error);
-                alert("Erro de conexão.");
+        if (!confirm("Deseja realmente excluir este projeto permanentemente?")) return;
+        
+        try {
+            const resposta = await this.controladoraProjetos.projetoService.remove(id);
+            
+            if (!resposta.ok) {
+                const data = await resposta.json();
+                alert(data.message || "Erro ao excluir projeto.");
+                return;
             }
+            
+            alert("Projeto excluído.");
+            this.controladoraProjetos.exibirProjetos();
+            this.adminCarregarProjetos();
+        } catch (error) {
+            console.error(error);
+            alert("Erro de conexão.");
         }
     }
 
@@ -1099,26 +1249,27 @@ class Interface {
     }
 
     async adminExcluirEvento(id) {
-        if (confirm("Deseja realmente excluir este compromisso da agenda permanentemente?")) {
-            try {
-                const resposta = await this.eventoService.remove(id);
+        if (!confirm("Deseja realmente excluir este compromisso da agenda permanentemente?")) return;
+        
+        try {
+            const resposta = await this.eventoService.remove(id);
 
-                if (resposta.ok) {
-                    alert("Compromisso excluído da agenda.");
-                    this.adminCarregarEventos();
-                    
-                    const inputData = document.getElementById('inputDataAgenda');
-                    if (inputData && inputData.value) {
-                        this.exibirEventosDia(inputData.value);
-                    }
-                } else {
-                    const data = await resposta.json();
-                    alert(data.message || "Erro ao excluir compromisso.");
-                }
-            } catch (error) {
-                console.error(error);
-                alert("Erro de conexão.");
+            if (!resposta.ok) {
+                const data = await resposta.json();
+                alert(data.message || "Erro ao excluir compromisso.");
+                return;
             }
+            
+            alert("Compromisso excluído da agenda.");
+            this.adminCarregarEventos();
+            await this.renderizarCalendario();
+
+            if (this._dataAtivaSelecionada) {
+                this.exibirEventosDia(this._dataAtivaSelecionada);
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Erro de conexão.");
         }
     }
 }

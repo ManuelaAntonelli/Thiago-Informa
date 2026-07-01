@@ -95,34 +95,6 @@ class ControladoraAutenticacao {
         return this.conta_logada && this.usuarioLogado && this.usuarioLogado.perfil === "Administrador";
     }
 
-    /**
-     * Cria um novo usuário do tipo Responsável (pelo modal do perfil)
-     */
-    async criarResponsavel() {
-        const nome = document.getElementById('cadNomeResponsavel').value;
-        const usuario = document.getElementById('cadUsuarioResponsavel').value;
-        const senha = document.getElementById('cadSenhaResponsavel').value;
-
-        if (!nome || !usuario || !senha) {
-            alert("Preencha todos os campos!");
-            return;
-        }
-
-        try {
-            const resposta = await this.authService.register(nome, usuario, senha, 'Responsável');
-            const data = await resposta.json();
-            if (!resposta.ok) {
-                alert(data.message || "Erro ao criar responsável.");
-                return;
-            }
-            alert("Responsável criado com sucesso!");
-            document.getElementById('formNovoResponsavel').reset();
-            bootstrap.Modal.getInstance(document.getElementById('modalCadastrarResponsavel')).hide();
-        } catch (error) {
-            console.error(error);
-            alert("Erro de conexão com o servidor.");
-        }
-    }
 
     /**
      * Abre o modal de edição de perfil
