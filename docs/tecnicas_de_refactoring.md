@@ -20,16 +20,7 @@ Refactoring é o processo de reestruturar código existente sem alterar seu comp
 
 Em vez de embutir a lógica de geração do JWT diretamente dentro da função `login`, ela foi extraída para uma função reutilizável:
 
-**Antes (problemático — lógica inline):**
-```javascript
-const login = async (req, res) => {
-    // ...validações...
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    // ...
-};
-```
-
-**Depois (refatorado):**
+**Refatorado:**
 ```javascript
 // Método extraído — reutilizável por qualquer handler que precise de token
 const generateToken = (id) => {
@@ -51,18 +42,7 @@ const login = async (req, res) => {
 
 A lógica de configuração segura do cookie (com flags `httpOnly`, `secure`, `sameSite`) foi extraída para evitar duplicação entre `login` e `updateProfile`:
 
-**Antes (problemático — código duplicado em dois handlers):**
-```javascript
-// Duplicado em login e updateProfile:
-res.cookie('token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 30 * 24 * 60 * 60 * 1000
-});
-```
-
-**Depois (refatorado):**
+**Refatorado:**
 ```javascript
 // Um único método extraído, chamado em dois lugares
 const setTokenCookie = (res, token) => {
@@ -198,13 +178,7 @@ const login = async (req, res) => {
 
 Em vez de repetir a string literal do segredo JWT em múltiplos pontos, ela é definida como constante no topo do arquivo:
 
-**Antes (problemático):**
-```javascript
-jwt.sign({ id }, 'thiago_secret_key_2026_super_secure', { expiresIn: '30d' });
-jwt.verify(token, 'thiago_secret_key_2026_super_secure');
-```
-
-**Depois (refatorado):**
+**Refatorado:**
 ```javascript
 // Uma única fonte de verdade
 const JWT_SECRET = process.env.JWT_SECRET || 'thiago_secret_key_2026_super_secure';
@@ -298,17 +272,7 @@ class ControladoraAutenticacao {
 
 Em vez de repetir `{ 'Content-Type': 'application/json' }` em cada `fetch`, um método centraliza a definição:
 
-**Antes (problemático — repetição em cada chamada fetch):**
-```javascript
-fetch('/api/projects', {
-    headers: { 'Content-Type': 'application/json' }
-});
-fetch('/api/informatives', {
-    headers: { 'Content-Type': 'application/json' }
-});
-```
-
-**Depois (refatorado):**
+**Refatorado:**
 ```javascript
 // Definição única
 getAuthHeaders() {
@@ -401,20 +365,7 @@ const informative = new Informative({ titulo, descricao, imagem, fixado: false }
 
 A validação de JWT e a verificação de perfil foram extraídas para middlewares reutilizáveis, removendo essa responsabilidade dos handlers de negócio:
 
-**Antes (problemático — lógica de auth misturada ao negócio):**
-```javascript
-const getProjects = async (req, res) => {
-    // Verificação de auth misturada ao negócio
-    const token = req.cookies.token;
-    if (!token) return res.status(401).json(...);
-    const decoded = jwt.verify(token, JWT_SECRET);
-    // ...lógica de negócio
-    const projects = await Project.find({});
-    res.json(projects);
-};
-```
-
-**Depois (refatorado):**
+**Refatorado:**
 ```javascript
 // Middlewares extraídos — reutilizáveis em qualquer rota
 const { protect, adminOnly } = require('../middleware/authMiddleware');
@@ -438,15 +389,7 @@ router.post('/', protect, adminOnly, createProject);
 
 Em vez de chamar `new Projeto(...)`, `new Informativo(...)`, `new Usuario(...)` espalhados pelo código, a classe `Fabrica` centraliza toda a criação de instâncias:
 
-**Antes (problemático — new espalhado pelo código):**
-```javascript
-// Em diferentes pontos do sistema:
-const projeto = new Projeto(nome, desc, turma, imagem);
-const info = new Informativo(titulo, desc, data, imagem);
-const user = new Usuario(nome, email, senha);
-```
-
-**Depois (refatorado):**
+**Refatorado:**
 ```javascript
 // Um único ponto de criação
 const projeto = Fabrica.criarProjeto(nome, desc, turma, imagem);
