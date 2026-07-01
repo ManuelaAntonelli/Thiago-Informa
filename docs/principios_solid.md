@@ -29,29 +29,8 @@ Uma classe ou módulo deve ter apenas **uma responsabilidade**. Se ela precisar 
 
 ### Aplicação no Backend
 
-#### Antes (violação — função misturando responsabilidades)
+#### SRP aplicado
 
-Em uma implementação ingênua, toda a lógica estaria concentrada no `server.js`:
-
-```javascript
-// ❌ RUIM — server.js com múltiplas responsabilidades
-app.post('/api/auth/login', async (req, res) => {
-    // Responsabilidade 1: validar credenciais
-    const user = await User.findOne({ usuario: req.body.usuario });
-    if (!user || !bcrypt.compare(req.body.senha, user.senha)) { ... }
-
-    // Responsabilidade 2: gerar token JWT
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-
-    // Responsabilidade 3: configurar cookie de resposta
-    res.cookie('token', token, { httpOnly: true, ... });
-
-    // Responsabilidade 4: formatar a resposta JSON
-    res.json({ _id: user._id, nome: user.nome, ... });
-});
-```
-
-#### Depois (SRP aplicado)
 
 Cada arquivo possui agora uma única razão para mudar:
 
@@ -113,31 +92,8 @@ class DatabaseConnection {
 
 ### Aplicação no Frontend
 
-#### Antes (violação — controladora misturava HTTP com DOM)
+#### SRP aplicado — separação entre Service e Controller
 
-A `ControladoraInformativo` antes de aplicar o SRP tinha esta estrutura:
-
-```javascript
-// ❌ RUIM — controladora com múltiplas responsabilidades
-class ControladoraInformativo {
-    async criarInformativo() {
-        // Responsabilidade 1: ler o DOM
-        const titulo = document.getElementById('inputTituloInfo').value;
-
-        // Responsabilidade 2: fazer a requisição HTTP (comunicação com servidor)
-        const resposta = await fetch('/api/informatives', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ titulo, descricao, imagem })
-        });
-
-        // Responsabilidade 3: manipular o DOM com o resultado
-        if (resposta.ok) { document.getElementById('formInformativo').reset(); }
-    }
-}
-```
-
-#### Depois (SRP aplicado — separação entre Service e Controller)
 
 **`public/scripts/services/InformativoService.js`** → *somente* comunicação HTTP
 
@@ -294,35 +250,6 @@ Em vez de ter uma interface (ou classe) grande e genérica, devemos criar interf
 
 ---
 
-### Violação (antes do ISP)
-
-Uma abordagem ingênua seria criar um único `ApiService` com todos os endpoints:
-
-```javascript
-// ❌ RUIM — ApiService monolítico viola o ISP
-// A ControladoraProjetos seria forçada a depender de métodos de auth que não usa
-class ApiService {
-    async login(usuario, senha) { ... }
-    async logout() { ... }
-    async getResponsibles() { ... }
-    async getProjects() { ... }
-    async createProject(dados) { ... }
-    async getInformatives() { ... }
-    async createInformative(dados) { ... }
-    async getEvents() { ... }
-    // ... todos os métodos misturados
-}
-
-// ControladoraProjetos agora conhece métodos de auth que nunca vai usar
-class ControladoraProjetos {
-    constructor(apiService) {
-        this.api = apiService; // recebe TUDO, mas usa apenas 4 métodos
-    }
-}
-```
-
----
-
 ### Aplicação: Services segregados por domínio
 
 Após aplicar o ISP, cada controladora recebe **apenas o service de que necessita**:
@@ -380,11 +307,9 @@ Interface (Agenda)        ──depende de──► EventoService      (3 métod
 Nenhum cliente conhece métodos de outro domínio.
 ```
 
-**Antes do ISP:**
-- `ControladoraProjetos` dependia de um objeto com ~20 métodos mas usava apenas 4.
-
-**Depois do ISP:**
+**Com ISP aplicado:**
 - `ControladoraProjetos` depende de `ProjetoService` que tem exatamente 4 métodos — nada mais, nada menos.
+
 
 ---
 
@@ -401,23 +326,8 @@ Classes de alto nível (como controllers de negócio) não devem criar ou import
 
 ### Aplicação no Backend — Controllers como Classes Injetáveis
 
-#### Antes (violação — dependência hardcoded)
+#### DIP aplicado — injeção via construtor
 
-```javascript
-// ❌ RUIM — authController.js importa dependências diretamente (acoplamento rígido)
-const User = require('../models/User');         // acoplado ao modelo
-const bcrypt = require('bcryptjs');             // acoplado à biblioteca de hash
-const jwt = require('jsonwebtoken');            // acoplado à biblioteca JWT
-
-// Impossível testar sem usar o banco de dados real!
-const login = async (req, res) => {
-    const user = await User.findOne({ usuario: req.body.usuario });
-    // ...
-};
-module.exports = { login };
-```
-
-#### Depois (DIP aplicado — injeção via construtor)
 
 ```javascript
 // ✅ BOM — AuthController recebe dependências via construtor (DIP)
@@ -567,3 +477,18 @@ class Interface {
 ```
 
 ---
+
+## Impacto das mudanças
+
+| Métrica | Antes do SOLID | Depois do SOLID |
+|---|---|---|
+| Arquivos JS no frontend | 7 | 12 (+5 services) |
+| Fetch diretos fora do HttpClient | 15+ (espalhados) | **0** |
+| Controllers que importam `require` de baixo nível | 4 | **0** |
+| Camadas de abstração entre UI e rede | 0 | **2** (Controller → Service → HttpClient) |
+| Testabilidade dos controllers (backend) | Precisa de MongoDB real | **Testável com mocks** |
+| Ponto de troca do cliente HTTP | Múltiplos arquivos | **1 linha no Composition Root** |
+
+---
+
+*Documento gerado com base no código-fonte do projeto Thiago Informa em 30/06/2026.*
