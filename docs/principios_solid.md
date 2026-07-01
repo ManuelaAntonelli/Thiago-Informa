@@ -567,18 +567,3 @@ class Interface {
 ```
 
 ---
-
-## Impacto das mudanças
-
-| Métrica | Antes do SOLID | Depois do SOLID |
-|---|---|---|
-| Arquivos JS no frontend | 7 | 12 (+5 services) |
-| Fetch diretos fora do HttpClient | 15+ (espalhados) | **0** |
-| Controllers que importam `require` de baixo nível | 4 | **0** |
-| Camadas de abstração entre UI e rede | 0 | **2** (Controller → Service → HttpClient) |
-| Testabilidade dos controllers (backend) | Precisa de MongoDB real | **Testável com mocks** |
-| Ponto de troca do cliente HTTP | Múltiplos arquivos | **1 linha no Composition Root** |
-
----
-
-*Documento gerado com base no código-fonte do projeto Thiago Informa em 30/06/2026.*
