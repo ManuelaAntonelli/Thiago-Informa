@@ -1,11 +1,5 @@
 # Técnicas de Refactoring Aplicadas — Thiago Informa
 
-> **Data de geração:** 30/06/2026
-> **Versão do projeto:** 1.0.0
-> **Referência base:** Martin Fowler — *Refactoring: Improving the Design of Existing Code* (2ª ed.)
-
----
-
 ## Introdução
 
 Refactoring é o processo de reestruturar código existente sem alterar seu comportamento externo, com o objetivo de melhorar legibilidade, manutenibilidade e extensibilidade. Este documento cataloga as técnicas de refactoring identificadas no projeto **Thiago Informa**, com as respectivas localizações no código-fonte.
@@ -22,15 +16,13 @@ Em vez de embutir a lógica de geração do JWT diretamente dentro da função `
 
 **Refatorado:**
 ```javascript
-// Método extraído — reutilizável por qualquer handler que precise de token
 const generateToken = (id) => {
     return jwt.sign({ id }, JWT_SECRET, { expiresIn: '30d' });
 };
 
 const login = async (req, res) => {
-    // ...validações...
-    const token = generateToken(user._id);  // chamada limpa
-    // ...
+    const token = generateToken(user._id);
+
 };
 ```
 
@@ -44,7 +36,6 @@ A lógica de configuração segura do cookie (com flags `httpOnly`, `secure`, `s
 
 **Refatorado:**
 ```javascript
-// Um único método extraído, chamado em dois lugares
 const setTokenCookie = (res, token) => {
     const isProduction = process.env.NODE_ENV === 'production';
     res.cookie('token', token, {
@@ -92,7 +83,6 @@ A lógica de negócio do frontend foi extraída da classe monolítica `Interface
 A `Interface` agora atua como Façade — delega para as controladoras sem conter lógica de negócio:
 
 ```javascript
-// Interface.js — método de fachada, sem lógica própria
 async criarInformativo() {
     await this.controladoraInformativo.criarInformativo();
 }
@@ -114,7 +104,6 @@ A lógica de cada recurso da API foi extraída para arquivos controllers dedicad
 O `server.js` tornou-se exclusivamente responsável por configuração e inicialização:
 
 ```javascript
-// server.js — apenas importa e registra; zero lógica de negócio
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/informatives', informativeRoutes);
@@ -138,7 +127,6 @@ class DatabaseConnection {
         }
         return DatabaseConnection.instance;
     }
-    // ...
 }
 ```
 
@@ -153,15 +141,12 @@ class DatabaseConnection {
 O endpoint `GET /api/auth/me` (consulta pura) foi separado do `POST /api/auth/login` (modificação de estado via cookie):
 
 ```javascript
-// QUERY — apenas lê o usuário via req.user (populado pelo middleware)
 const getMe = async (req, res) => {
     res.json({ _id: req.user._id, nome: req.user.nome, ... });
 };
 
-// COMMAND — valida credenciais E define o cookie de sessão
 const login = async (req, res) => {
-    // ...
-    setTokenCookie(res, token); // efeito colateral explícito
+    setTokenCookie(res, token);
     res.json({ ... });
 };
 ```
@@ -180,10 +165,8 @@ Em vez de repetir a string literal do segredo JWT em múltiplos pontos, ela é d
 
 **Refatorado:**
 ```javascript
-// Uma única fonte de verdade
 const JWT_SECRET = process.env.JWT_SECRET || 'thiago_secret_key_2026_super_secure';
 
-// Usado em generateToken e no middleware
 jwt.sign({ id }, JWT_SECRET, { expiresIn: '30d' });
 jwt.verify(token, JWT_SECRET);
 ```
@@ -199,7 +182,6 @@ jwt.verify(token, JWT_SECRET);
 A duração do cookie é expressa como cálculo explícito em vez de um número mágico:
 
 ```javascript
-// Legível: 30 dias em milissegundos
 maxAge: 30 * 24 * 60 * 60 * 1000
 ```
 
@@ -210,8 +192,7 @@ maxAge: 30 * 24 * 60 * 60 * 1000
 ### 4.3 — Constante de Tempo do Carrossel
 
 ```javascript
-// Intervalo do carrossel nomeado como propriedade
-this.tempoRolagem = 3500; // 3.5 segundos, reutilizado em iniciarCarrossel()
+this.tempoRolagem = 3500;
 ```
 
 **Onde encontrar:** `public/scripts/controllers/ControladoraInformativo.js` — linha 14 (definição), linha 418 (uso).
@@ -227,10 +208,8 @@ this.tempoRolagem = 3500; // 3.5 segundos, reutilizado em iniciarCarrossel()
 O campo `senha` (hash bcrypt) é explicitamente excluído de todas as consultas que retornam dados ao cliente:
 
 ```javascript
-// select('-senha') garante que o hash nunca trafegue pela rede
 req.user = await User.findById(decoded.id).select('-senha');
 
-// Em getResponsibles:
 const users = await User.find({}).select('-senha');
 ```
 
@@ -247,13 +226,11 @@ O estado da sessão (`conta_logada`, `usuarioLogado`) é privado à controladora
 ```javascript
 class ControladoraAutenticacao {
     constructor() {
-        // Estado interno encapsulado
         this.conta_logada = false;
         this.usuarioLogado = null;
         this.usuarioLogadoUsername = null;
     }
 
-    // Acesso controlado via método público
     verificarAdm() {
         return this.conta_logada && this.usuarioLogado?.perfil === "Administrador";
     }
@@ -274,12 +251,10 @@ Em vez de repetir `{ 'Content-Type': 'application/json' }` em cada `fetch`, um m
 
 **Refatorado:**
 ```javascript
-// Definição única
 getAuthHeaders() {
     return { 'Content-Type': 'application/json' };
 }
 
-// Todas as chamadas usam o método
 fetch('/api/projects', {
     headers: this.controladoraAuth.getAuthHeaders()
 });
@@ -302,11 +277,9 @@ Todos os handlers do backend seguem o mesmo padrão consolidado de tratamento de
 ```javascript
 const handler = async (req, res) => {
     try {
-        // lógica de negócio
         const result = await Model.operation();
         res.json(result);
     } catch (error) {
-        // Fragmento consolidado — tratamento uniforme de erro de servidor
         res.status(500).json({ message: 'Mensagem descritiva', error: error.message });
     }
 };
@@ -323,11 +296,9 @@ Este padrão é aplicado consistentemente em todos os 17 handlers assíncronos d
 O padrão de verificação de existência de recurso antes de operar sobre ele foi consolidado:
 
 ```javascript
-// Padrão consolidado: busca → verifica existência → opera → responde
 const informative = await Informative.findById(req.params.id);
 
 if (informative) {
-    // operação de sucesso
 } else {
     res.status(404).json({ message: 'Informativo não encontrado' });
 }
@@ -346,10 +317,8 @@ Aplicado nos handlers de update, delete e toggle de todos os recursos.
 Os dados de entrada da API são recebidos e agrupados como objetos antes de serem passados para operações:
 
 ```javascript
-// Parâmetros agrupados via desestruturação
 const { titulo, descricao, imagem } = req.body;
 
-// Passados como objeto para o Model
 const informative = new Informative({ titulo, descricao, imagem, fixado: false });
 ```
 
@@ -367,10 +336,8 @@ A validação de JWT e a verificação de perfil foram extraídas para middlewar
 
 **Refatorado:**
 ```javascript
-// Middlewares extraídos — reutilizáveis em qualquer rota
 const { protect, adminOnly } = require('../middleware/authMiddleware');
 
-// Rota limpa: auth declarativa, handler focado em negócio
 router.get('/', protect, getProjects);
 router.post('/', protect, adminOnly, createProject);
 ```
@@ -391,7 +358,6 @@ Em vez de chamar `new Projeto(...)`, `new Informativo(...)`, `new Usuario(...)` 
 
 **Refatorado:**
 ```javascript
-// Um único ponto de criação
 const projeto = Fabrica.criarProjeto(nome, desc, turma, imagem);
 const info = Fabrica.criarInformativo(titulo, desc, data, imagem);
 const user = Fabrica.criarUsuario(nome, email, senha);
@@ -412,12 +378,10 @@ const createInformative = async (req, res) => {
     const { titulo, descricao, imagem } = req.body;
 
     try {
-        // Guard clause: retorno antecipado se dados inválidos
         if (!titulo || !descricao) {
             return res.status(400).json({ message: 'Título e descrição são obrigatórios' });
         }
 
-        // Fluxo principal — só chega aqui se dados forem válidos
         const informative = new Informative({ titulo, descricao, imagem: imagem || '', fixado: false });
         const created = await informative.save();
         res.status(201).json(created);
@@ -438,10 +402,8 @@ const createInformative = async (req, res) => {
 ```javascript
 async exibirProjetos(filtroTurma = 'Todos') {
     const container = document.getElementById('lista-projetos');
-    // Guard clause: retorno antecipado se elemento não existe no DOM
     if (!container) return;
 
-    // Fluxo principal...
 }
 ```
 
@@ -460,16 +422,12 @@ async exibirProjetos(filtroTurma = 'Todos') {
 Todos os valores sensíveis ou configuráveis foram extraídos para variáveis de ambiente com fallbacks seguros para desenvolvimento:
 
 ```javascript
-// server.js — porta configurável
 const PORT = process.env.PORT || 5000;
 
-// db.js — URI do banco configurável
 const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/thiago-informa';
 
-// authController.js — segredo JWT configurável
 const JWT_SECRET = process.env.JWT_SECRET || 'thiago_secret_key_2026_super_secure';
 
-// authController.js — cookie seguro apenas em produção
 const isProduction = process.env.NODE_ENV === 'production';
 res.cookie('token', token, { secure: isProduction, ... });
 ```
@@ -492,10 +450,8 @@ O `server.js` verifica se o admin já existe antes de criá-lo, evitando duplica
 
 ```javascript
 dbInstance.connectPromise.then(async () => {
-    // Guard clause de inicialização: só cria se não existir
     const adminExists = await User.findOne({ usuario: 'admin' });
     if (!adminExists) {
-        // Cria com senha já hasheada
         const hashedPassword = await bcrypt.hash('admin123', salt);
         await User.create({ nome: 'Administrador', usuario: 'admin', senha: hashedPassword, perfil: 'Administrador' });
     }
@@ -527,5 +483,3 @@ dbInstance.connectPromise.then(async () => {
 | 13 | Initialization Guard | Idempotência | Semeio do admin no boot |
 
 ---
-
-*Documento gerado com base na análise estática do código-fonte do projeto Thiago Informa em 30/06/2026.*
